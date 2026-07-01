@@ -1,0 +1,15 @@
+// sc_tripler_PARAM.vams — default parameter values for sc_tripler.
+// Included only by sc_tripler.vams (the top block). Sub-modules (sc_switch)
+// never include this file directly; they receive values solely through
+// instantiation parameter overrides from sc_tripler.
+
+`define P_C1         100n    // flying cap 1 [F]
+`define P_C2         100n    // flying cap 2 [F]
+
+`define P_RON_TIER1  50m     // tier-1 (<=Vin) switch Ron [Ohm]
+`define P_RON_TIER2  50m     // tier-2 (<=2*Vin) switch Ron [Ohm]
+`define P_RON_TIER3  50m     // tier-3 (<=3*Vin) switch Ron [Ohm]
+`define P_ROFF       100M    // shared off-state leakage resistance [Ohm]
+
+`define P_TRISE      1n      // switch control turn-on edge [s]
+`define P_TFALL      1n      // switch control turn-off edge [s]

@@ -8,17 +8,19 @@ corners, and what each is meant to expose.
 | Port | Kind | Not supplied by the model |
 |---|---|---|
 | `vin` | DC or slow ramp | source impedance, source itself |
-| `phi1`, `phi2` | logic clock phases | dead-time/non-overlap timing, or deliberate overlap fault |
-| `vout` load | current sink at `vout` | load itself (resistive or current-source) |
+| `phi1`, `phi2` | digital clock phases (`wire`) | dead-time/non-overlap timing, or deliberate overlap fault |
+| `vout` load | current sink at `vout`, plus a reservoir cap if desired | load itself, output cap — both out of scope of this model |
 
-`phi1`/`phi2` are independent logic ports (see STRATEGY) — the stimulus owns all
-clock generation, including getting the dead-time right in the nominal case.
+`phi1`/`phi2` are independent digital ports (see STRATEGY) — the stimulus owns
+all clock generation, including getting the dead-time right in the nominal
+case. The output reservoir cap is likewise not part of this model — add it on
+the stimulus/testbench side of `vout` if ripple filtering is needed.
 
 ## Core sequences
 
 1. **Nominal periodic phase drive** — `phi1`/`phi2` as complementary square waves
    at the target `fsw`, each ~45% duty, separated by an explicit dead-time gap
-   sized several multiples of `t_edge` (e.g. 5–10×) so neither phase is high
+   sized several multiples of `trise`/`tfall` (e.g. 5–10×) so neither phase is high
    during the other's transition. Run for enough cycles (tens to hundreds,
    depending on `c1`/`c2`/`ron`) to reach periodic steady state on `vout`.
    Exposes: nominal 3·Vin conversion, ripple shape, settling time.
@@ -52,12 +54,13 @@ clock generation, including getting the dead-time right in the nominal case.
    with both phases high, `vin` sees a low-impedance path to `gnd` through
    whichever switches are on tier-1 (`S1a/S1b/S2a/S2b`) simultaneously with
    tier-2/3 paths engaged. Confirm this shows up as a current spike, not a
-   convergence failure (the smooth `l2e_module` edges should keep Newton happy
-   even in this fault state).
+   convergence failure (the smooth `transition()` edges inside `sc_switch`
+   should keep Newton happy even in this fault state).
 
 6. **Load step** — step `Iload` between two levels with phases running at
-   fixed `fsw`. Exposes: transient recovery time of `vout`, sized by `cout`
-   and the loop-free (this converter has no feedback) open-loop droop.
+   fixed `fsw`. Exposes: transient recovery time of `vout`, sized by whatever
+   reservoir cap the stimulus adds externally, and the loop-free (this
+   converter has no feedback) open-loop droop.
 
 ## Corners / parameter settings to exercise
 
@@ -65,8 +68,8 @@ clock generation, including getting the dead-time right in the nominal case.
 |---|---|---|
 | `c1`, `c2` | min/typ/max flying-cap size | SSL term scales as `1/C`; shows in sequence 3 |
 | `ron_tier1/2/3` | equal (default), then tier3 ≫ tier1 | matches real voltage-rating/area tradeoff; check FSL floor shifts as expected |
-| `t_edge` | fast (~0.1 ns) vs. slow (~10 ns) | edge time should not change steady-state `Vout`, only transition smoothness/convergence |
-| dead-time | nominal (several × `t_edge`), zero/negative (fault) | sequence 5 |
+| `trise`/`tfall` | fast (~0.1 ns) vs. slow (~10 ns) | edge time should not change steady-state `Vout`, only transition smoothness/convergence |
+| dead-time | nominal (several × `trise`/`tfall`), zero/negative (fault) | sequence 5 |
 | `fsw` | spanning the SSL/FSL corner (sequence 3) | the headline characterization |
 | `Iload` | no load, typical, near-dropout | droop and recovery behavior |
 

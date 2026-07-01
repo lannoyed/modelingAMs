@@ -8,12 +8,16 @@
 // by construction if cap sizes or Ron values change later, instead of
 // requiring a hand-derived constant to be kept in sync with the topology.
 //
+// Out of scope: the output reservoir cap and the load. Both live outside this
+// model (stimulus/testbench side); `vout` here is only the series-stack
+// summing node, not a regulated rail.
+//
 // Topology (confirmed netlist):
 //   phi1 (charge):    C1, C2 each charge to Vin, in parallel, referenced to GND.
 //   phi2 (discharge):  C1 and C2 series-stack on top of Vin: Vin -> C1 -> N2 -> C2 -> Vout,
 //                      summing three Vin drops (Vin + Vin + Vin = 3*Vin at Vout).
 //   phi1/phi2 must be non-overlapping; overlap is a shoot-through fault, deliberately
-//   left reachable here (see connect-rule note) so the STIMULI plan can exercise it.
+//   left reachable here (see STIMULI plan) since both are driven externally.
 //
 // Switch-stress tiers (voltage each switch/node blocks in phi2, the worst case):
 //   tier 1 (<= Vin):    S1a, S1b, S2a, S2b   (phi1 switches only ever see Vin)
@@ -21,17 +25,21 @@
 //   tier 3 (<= 3*Vin):  S4b                 (C2_top/Vout sit at 3*Vin in phi2)
 //
 // LRM/Symphony features: conservative `electrical` nodes throughout the charge-
-// transfer path; `phi1`/`phi2` are `logic` and cross into the analog domain
-// through an *explicit* l2e_module instance per phase (not Symphony's default
-// auto-insertion) because this boundary is timing-critical -- a wrong tr/tf
-// changes shoot-through behavior. Capacitors are direct `I <+ C*ddt(V)`
-// contributions (a one-line primitive doesn't earn its own sub-module);
-// switches are composed from the reusable `sc_switch` (see sc_switch.vams).
+// transfer path; `phi1`/`phi2` are plain digital `wire`s, connected straight
+// into each `sc_switch` instance -- the digital<->analog boundary is resolved
+// inside sc_switch via Symphony's automatic connect modules (see
+// disciplines.vams), not a project-specific connect module. Capacitors are
+// direct `I <+ C*ddt(V)` contributions (a one-line primitive doesn't earn its
+// own sub-module); switches are composed from the reusable `sc_switch`.
 //
 // Design patterns: Strategy on sc_switch's `ron` (0 isolates the SSL asymptote,
 // raising it brings in FSL -- same equation, no branching). Factory-style tier
 // selection: one `ron_tier{1,2,3}` parameter per stress tier instead of eight
 // independent per-switch parameters, mirroring the netlist's own 3-tier structure.
+//
+// Parameters: all defaults come from sc_tripler_PARAM.vams (included below),
+// this being the top block; sc_switch never includes that file -- it only
+// receives values through the instantiation overrides here.
 //
 // Limitations: ideal caps (no ESR/ESL), ideal switches (see sc_switch.vams),
 // no internal non-overlap generation -- phi1/phi2 must be supplied correctly
@@ -40,54 +48,39 @@
 
 `include "disciplines.vams"
 `include "constants.vams"
+`include "sc_tripler_PARAM.vams"
 
-module sc_tripler(vin, vout, gnd, phi1, phi2);
-  inout vin, vout, gnd;
-  input phi1, phi2;
-
+module sc_tripler #(
+    parameter real c1        = `P_C1        from (0:inf),   // flying cap 1 [F]
+    parameter real c2        = `P_C2        from (0:inf),   // flying cap 2 [F]
+    parameter real ron_tier1 = `P_RON_TIER1 from (0:inf),   // Ron for tier-1 (<=Vin) switches [Ohm]
+    parameter real ron_tier2 = `P_RON_TIER2 from (0:inf),   // Ron for tier-2 (<=2*Vin) switches [Ohm]
+    parameter real ron_tier3 = `P_RON_TIER3 from (0:inf),   // Ron for tier-3 (<=3*Vin) switches [Ohm]
+    parameter real roff      = `P_ROFF      from (0:inf),   // shared off-state leakage resistance [Ohm]
+    parameter real trise     = `P_TRISE     from (0:inf),   // switch control turn-on edge [s]
+    parameter real tfall     = `P_TFALL     from (0:inf)    // switch control turn-off edge [s]
+) (
+    inout vin, vout, gnd,
+    input wire phi1, phi2
+);
   electrical vin, vout, gnd;
-  logic phi1, phi2;
-
-  parameter real c1   = 100n from (0:inf);   // flying cap 1 [F]
-  parameter real c2   = 100n from (0:inf);   // flying cap 2 [F]
-  parameter real cout = 1u   from (0:inf);   // output reservoir cap [F]
-
-  parameter real ron_tier1 = 50m  from (0:inf);   // Ron for tier-1 (<=Vin) switches [Ohm]
-  parameter real ron_tier2 = 50m  from (0:inf);   // Ron for tier-2 (<=2*Vin) switches [Ohm]
-  parameter real ron_tier3 = 50m  from (0:inf);   // Ron for tier-3 (<=3*Vin) switches [Ohm]
-  // Defaults equal across tiers; in real silicon a higher voltage-rated device
-  // often needs more area for the same Ron, so tier-3 devices commonly land
-  // higher than tier-1 for a fixed die budget. Override per your device library.
-  parameter real roff = 100M from (0:inf);        // shared off-state leakage resistance [Ohm]
-
-  parameter real t_edge = 1n from (0:inf);   // phase switch turn-on/off edge [s], fed to l2e_module
-
   electrical c1_top, c1_bot, c2_top, c2_bot, n2;
-  electrical phi1_a, phi2_a;   // CM-smoothed analog representation of phi1/phi2
-
-  // --- explicit connect modules: logic phase -> analog control node ---
-  // Timing-critical boundary (dead-time / shoot-through hinge on tr/tf), so
-  // instantiated explicitly with t_edge rather than relying on Symphony's
-  // default auto-inserted CM edge.
-  l2e_module #(.tr(t_edge), .tf(t_edge)) u_phi1_cm (.l(phi1), .e(phi1_a));
-  l2e_module #(.tr(t_edge), .tf(t_edge)) u_phi2_cm (.l(phi2), .e(phi2_a));
 
   // --- phi1 (charge): C1, C2 in parallel across Vin -> GND ---
-  sc_switch #(.ron(ron_tier1), .roff(roff), .tier(1)) u_s1a (.p(c1_top), .n(vin), .ctrl(phi1_a));
-  sc_switch #(.ron(ron_tier1), .roff(roff), .tier(1)) u_s1b (.p(c1_bot), .n(gnd), .ctrl(phi1_a));
-  sc_switch #(.ron(ron_tier1), .roff(roff), .tier(1)) u_s2a (.p(c2_top), .n(vin), .ctrl(phi1_a));
-  sc_switch #(.ron(ron_tier1), .roff(roff), .tier(1)) u_s2b (.p(c2_bot), .n(gnd), .ctrl(phi1_a));
+  sc_switch #(.ron(ron_tier1), .roff(roff), .tier(1), .trise(trise), .tfall(tfall)) u_s1a (.p(c1_top), .n(vin), .ctrl(phi1));
+  sc_switch #(.ron(ron_tier1), .roff(roff), .tier(1), .trise(trise), .tfall(tfall)) u_s1b (.p(c1_bot), .n(gnd), .ctrl(phi1));
+  sc_switch #(.ron(ron_tier1), .roff(roff), .tier(1), .trise(trise), .tfall(tfall)) u_s2a (.p(c2_top), .n(vin), .ctrl(phi1));
+  sc_switch #(.ron(ron_tier1), .roff(roff), .tier(1), .trise(trise), .tfall(tfall)) u_s2b (.p(c2_bot), .n(gnd), .ctrl(phi1));
 
   // --- phi2 (discharge): C1, C2 series-stacked on top of Vin -> Vout ---
-  sc_switch #(.ron(ron_tier2), .roff(roff), .tier(2)) u_s3a (.p(c1_bot), .n(vin),  .ctrl(phi2_a));
-  sc_switch #(.ron(ron_tier2), .roff(roff), .tier(2)) u_s3b (.p(c1_top), .n(n2),   .ctrl(phi2_a));
-  sc_switch #(.ron(ron_tier2), .roff(roff), .tier(2)) u_s4a (.p(c2_bot), .n(n2),   .ctrl(phi2_a));
-  sc_switch #(.ron(ron_tier3), .roff(roff), .tier(3)) u_s4b (.p(c2_top), .n(vout), .ctrl(phi2_a));
+  sc_switch #(.ron(ron_tier2), .roff(roff), .tier(2), .trise(trise), .tfall(tfall)) u_s3a (.p(c1_bot), .n(vin),  .ctrl(phi2));
+  sc_switch #(.ron(ron_tier2), .roff(roff), .tier(2), .trise(trise), .tfall(tfall)) u_s3b (.p(c1_top), .n(n2),   .ctrl(phi2));
+  sc_switch #(.ron(ron_tier2), .roff(roff), .tier(2), .trise(trise), .tfall(tfall)) u_s4a (.p(c2_bot), .n(n2),   .ctrl(phi2));
+  sc_switch #(.ron(ron_tier3), .roff(roff), .tier(3), .trise(trise), .tfall(tfall)) u_s4b (.p(c2_top), .n(vout), .ctrl(phi2));
 
   analog begin
-    // Flying and output caps: direct charge-conservation contributions.
-    I(c1_top, c1_bot) <+ c1   * ddt(V(c1_top, c1_bot));
-    I(c2_top, c2_bot) <+ c2   * ddt(V(c2_top, c2_bot));
-    I(vout,   gnd)    <+ cout * ddt(V(vout,   gnd));
+    // Flying caps: direct charge-conservation contributions.
+    I(c1_top, c1_bot) <+ c1 * ddt(V(c1_top, c1_bot));
+    I(c2_top, c2_bot) <+ c2 * ddt(V(c2_top, c2_bot));
   end
 endmodule
