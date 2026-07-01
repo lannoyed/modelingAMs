@@ -65,3 +65,41 @@ slowly — model phase-domain for strategy work, full-carrier only if unavoidabl
 ## Boundary caution
 `V()` reads in `always` blocks are sampled values, not continuous — never `<+`
 contribute from an `always` block. See `pitfalls/connect_rules.md`.
+
+## 2026-07-01 — ADD — switched-capacitor / charge-pump converters
+A distinct sub-class from the sampling ADC above: SC converters (voltage
+multipliers/dividers, charge pumps) move charge between flying caps on
+non-overlapping clock phases rather than sampling a continuous input.
+
+- **Model the physical netlist, not an algebraic transfer function.** Build
+  the actual switch+cap topology as conservative `electrical` nodes. An
+  averaged model (`Vout = N*Vin - Iout*R_out`, with `R_out` derived from SSL/
+  FSL formulas) is a second, independently-maintained expression of the same
+  physics — it drifts from the real netlist the moment cap sizes or switch
+  Ron change without the formula being re-derived by hand. Let output
+  impedance and its SSL/FSL corner **emerge** from a transient `fsw`x`Iload`
+  sweep in the STIMULI stage instead.
+- **Reusable switch sub-module, not eight copy-pasted conductances.** One
+  `sc_switch`-style module (electrical `p`,`n`; digital `wire ctrl`; ANSI
+  parameters `ron`, `roff`) instantiated once per phase switch. Strategy
+  pattern on `ron` (0 isolates the SSL asymptote in a sweep; raising it brings
+  in FSL — same equation, no branching). Factory-style tier selection: if the
+  topology has N distinct voltage-stress tiers (a series-stacking topology
+  usually does — each node sits at a different multiple of Vin), expose one
+  `ron_tier{1..N}` parameter per tier at the top level rather than one
+  parameter per switch instance.
+- **Clock phases are digital `wire` ports, driven entirely externally** — no
+  internal non-overlap/dead-time generator in the model (separation of
+  concerns: a model contains no drive source). This also keeps a deliberate
+  phase-overlap (shoot-through) corner reachable from the STIMULI stage
+  instead of architected away.
+- **Reservoir/output caps and the load are out of scope of the converter
+  model.** They belong on the stimulus/testbench side of the output port —
+  don't add a "convenience" output cap just because the topology usually has
+  one nearby in a real board.
+- Smoothing and connect-module conventions: see `pitfalls/connect_rules.md`
+  (2026-07-01 revision) and `pitfalls/convergence.md` — `transition()` is
+  called directly on the digital `wire` control signal inside the switch's
+  own analog block, no hand-declared connect module. Parameter conventions
+  (ANSI headers, `localparam` for derived constants, the `<MODULE_NAME>_PARAM.vams`
+  file) are in `pitfalls/parameters.md`.

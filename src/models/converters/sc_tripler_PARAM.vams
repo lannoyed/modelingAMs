@@ -1,0 +1,13 @@
+// sc_tripler_PARAM.vams — default parameter values for sc_tripler.
+// Included directly inside sc_tripler's ANSI parameter port list #( ... ),
+// so each value keeps its own range guard rather than being a bare macro.
+// Sub-modules (sc_switch) never include this file directly; they receive
+// values solely through instantiation parameter overrides from sc_tripler.
+    parameter real c1        = 100n from (0:inf),   // flying cap 1 [F]
+    parameter real c2        = 100n from (0:inf),   // flying cap 2 [F]
+    parameter real ron_tier1 = 50m  from (0:inf),   // Ron for tier-1 (<=Vin) switches [Ohm]
+    parameter real ron_tier2 = 50m  from (0:inf),   // Ron for tier-2 (<=2*Vin) switches [Ohm]
+    parameter real ron_tier3 = 50m  from (0:inf),   // Ron for tier-3 (<=3*Vin) switches [Ohm]
+    parameter real roff      = 100M from (0:inf),   // shared off-state leakage resistance [Ohm]
+    parameter real trise     = 1n   from (0:inf),   // switch control turn-on edge [s]
+    parameter real tfall     = 1n   from (0:inf)    // switch control turn-off edge [s]

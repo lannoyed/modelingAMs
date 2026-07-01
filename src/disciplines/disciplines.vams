@@ -1,4 +1,4 @@
-// disciplines.vams — project-wide discipline & connectrule declarations
+// disciplines.vams — project-wide discipline declarations
 // Target: Siemens Questa ADMS / Symphony. Include this in every compile.
 `include "disciplines.vams"   // standard Accellera header (electrical, logic, ...)
 `include "constants.vams"
@@ -12,8 +12,5 @@ discipline current
   flow Current;
 enddiscipline
 
-// --- Connect rules: state these explicitly; Symphony auto-inserts CMs to match ---
-connectrules e2l_l2e;
-  connect e2l_module input electrical, output logic;   // driver = analog
-  connect l2e_module input logic, output electrical;   // driver = digital
-endconnectrules
+// Digital<->electrical boundaries rely on Symphony's automatic connect
+// modules (A2D/D2A/A2R/R2A); no project-specific connect module is declared.
