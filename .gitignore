@@ -1,0 +1,15 @@
+# Symphony / Questa ADMS simulation artifacts
+*.wlf
+*.vcd
+*.fsdb
+*.raw
+work/
+INCA_libs/
+*.log
+transcript
+*.pak
+.simvision/
+verilog.dump
+# Editor / OS
+*.swp
+.DS_Store
