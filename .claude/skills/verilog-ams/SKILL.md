@@ -17,22 +17,25 @@ No testbenches, no driver modules, no analysis setups, no verification. See CLAU
 ## When triggered, do this in order
 1. Read the repo CLAUDE.md (three-stage output contract + Siemens ground rules).
 2. Identify the block class -> read the matching file in `patterns/`.
-3. Skim `pitfalls/` for anything relevant (always check `convergence.md` and
-   `connect_rules.md`).
+3. Skim `pitfalls/` for anything relevant (always check `convergence.md`,
+   `connect_rules.md`, and `parameters.md`).
 4. Produce STRATEGY, IMPLEMENTATION, STIMULI.
 5. Emit a SKILL-UPDATE candidate (protocol below).
 
 ## Discipline decision table
-| Domain            | Discipline    | Access    | Use when                              |
-|-------------------|---------------|-----------|---------------------------------------|
-| Electrical node   | `electrical`  | V, I      | Conservative KCL/KVL nodes, real pins |
-| Digital control   | `logic`       | —         | Clocks, enables, digital codes        |
-| Abstract voltage  | `voltage`     | pot V     | Signal-flow, no current loading       |
-| Abstract current  | `current`     | flow I    | Signal-flow current sources           |
-| Thermal (opt.)    | `thermal`     | Temp,Pwr  | Self-heating / electro-thermal        |
+| Domain            | Discipline/type | Access    | Use when                              |
+|-------------------|-----------------|-----------|---------------------------------------|
+| Electrical node   | `electrical`    | V, I      | Conservative KCL/KVL nodes, real pins |
+| Digital control   | `wire`          | —         | Clocks, enables, digital codes        |
+| Abstract voltage  | `voltage`       | pot V     | Signal-flow, no current loading       |
+| Abstract current  | `current`       | flow I    | Signal-flow current sources           |
+| Thermal (opt.)    | `thermal`       | Temp,Pwr  | Self-heating / electro-thermal        |
 
-Boundary rule: any `electrical`<->`logic` net needs a stated connectrule; make the CM
-explicit if the boundary is bidirectional or timing-critical.
+Boundary rule (revised 2026-07-01): default to Symphony's automatic A2D/D2A/A2R/R2A
+connect modules for any `electrical`<->`wire` boundary; smooth with `transition(wire_sig,
+0, trise, tfall)` directly inside the receiving analog block. Only hand-declare a
+project-specific connect module when the boundary needs something the automatic CM
+can't provide. See `pitfalls/connect_rules.md`.
 
 ## Reusable patterns (`patterns/`)
 - `opamp.md`     — op-amps, LDOs, filters (conservative electrical)
@@ -44,6 +47,8 @@ Each = strategy notes + vetted module skeleton + stimulus-plan notes.
 - `convergence.md`  — discontinuity smoothing, abstol, timestep control
 - `connect_rules.md`— Symphony CM insertion, discipline resolution, interop
 - `units.md`        — dimensional balance in `<+` contributions
+- `parameters.md`   — ANSI-style parameter headers, `localparam` for derived
+  constants, the `<MODULE_NAME>_PARAM.vams` convention
 
 ## SKILL-UPDATE protocol (the self-upgrade loop)
 End every model with exactly one line:
