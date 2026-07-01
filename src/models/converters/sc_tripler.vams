@@ -48,17 +48,9 @@
 
 `include "disciplines.vams"
 `include "constants.vams"
-`include "sc_tripler_PARAM.vams"
 
 module sc_tripler #(
-    parameter real c1        = `P_C1        from (0:inf),   // flying cap 1 [F]
-    parameter real c2        = `P_C2        from (0:inf),   // flying cap 2 [F]
-    parameter real ron_tier1 = `P_RON_TIER1 from (0:inf),   // Ron for tier-1 (<=Vin) switches [Ohm]
-    parameter real ron_tier2 = `P_RON_TIER2 from (0:inf),   // Ron for tier-2 (<=2*Vin) switches [Ohm]
-    parameter real ron_tier3 = `P_RON_TIER3 from (0:inf),   // Ron for tier-3 (<=3*Vin) switches [Ohm]
-    parameter real roff      = `P_ROFF      from (0:inf),   // shared off-state leakage resistance [Ohm]
-    parameter real trise     = `P_TRISE     from (0:inf),   // switch control turn-on edge [s]
-    parameter real tfall     = `P_TFALL     from (0:inf)    // switch control turn-off edge [s]
+`include "sc_tripler_PARAM.vams"
 ) (
     inout vin, vout, gnd,
     input wire phi1, phi2
