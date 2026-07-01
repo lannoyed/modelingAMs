@@ -17,3 +17,29 @@ connectrules e2l_l2e;
   connect e2l_module input electrical, output logic;   // driver = analog
   connect l2e_module input logic, output electrical;   // driver = digital
 endconnectrules
+
+// l2e_module — the concrete logic->electrical connect module referenced above.
+// Why: any model in this library that drives an electrical node from a logic net
+// (clock phases, digital control) needs a *stated*, finite-edge transition rather
+// than an instantaneous step, or Newton sees a discontinuity at every commutation
+// instant. tr/tf are parameters so a specific boundary (e.g. a converter's switch
+// drive) can override them to match its real edge time; defaults are a generic,
+// technology-agnostic ~1 ns edge.
+module l2e_module(l, e);
+  input  l;
+  output e;
+  logic     l;
+  electrical e;
+
+  parameter real tr  = 1n  from (0:inf);   // rise time [s]
+  parameter real tf  = 1n  from (0:inf);   // fall time [s]
+  parameter real vlo = 0.0;                // analog level for logic 0 [V]
+  parameter real vhi = 1.0;                // analog level for logic 1 [V]
+
+  real target;
+
+  analog begin
+    target = (l == 1'b1) ? vhi : vlo;
+    V(e) <+ transition(target, 0, tr, tf);
+  end
+endmodule

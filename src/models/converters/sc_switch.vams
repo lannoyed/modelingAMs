@@ -1,0 +1,45 @@
+// sc_switch.vams — ideal analog switch for switched-capacitor charge-transfer paths.
+//
+// Why: every phase switch in a SC converter needs the same behavior (smooth
+// on/off conductance blend, no hard branch) but a different on-resistance
+// depending on which voltage tier it operates at. One reusable module,
+// instantiated per switch with a tier-appropriate `ron`, replaces eight
+// hand-copied conductance equations (composition over copy-paste).
+//
+// LRM/Symphony features: `<+` current contribution driven by a conductance that
+// is itself a smooth (not stepped) function of the control node -- the control
+// node's own edge shaping comes from the upstream `l2e_module` connect module
+// (see disciplines.vams), so this switch never needs its own transition() call.
+//
+// Limitations: no charge-injection, no dV/dt-dependent Ron, no body diode.
+// Ideal-switch macromodel only; sufficient for exploring the SSL/FSL output-
+// impedance corner of a converter, not for gate-drive or charge-injection studies.
+
+`include "disciplines.vams"
+`include "constants.vams"
+
+module sc_switch(p, n, ctrl);
+  inout p, n;
+  input ctrl;
+  electrical p, n;
+  electrical ctrl;   // driven by l2e_module; contract: settles to 0 (off) or 1 (on)
+
+  parameter real ron  = 50m  from (0:inf);   // on-resistance [Ohm] -- sets this switch's FSL contribution
+  parameter real roff = 100M from (0:inf);   // off leakage resistance [Ohm]; finite so 1/roff never divides by zero
+  parameter integer tier = 1 from [1:3];     // documents V_DS stress tier (1=Vin, 2=2*Vin, 3=3*Vin); not used
+                                              // in the equations below -- carried for traceability against the
+                                              // converter's switch-stress table when picking ron per instance.
+
+  real gon, goff, ctrl_frac;
+
+  analog begin
+    gon  = 1.0 / ron;
+    goff = 1.0 / roff;
+
+    // ctrl already carries the connect module's finite tr/tf edge; blending
+    // conductance directly on it (rather than re-transitioning here) keeps a
+    // single, explicit place in the model that owns commutation smoothness.
+    ctrl_frac = V(ctrl);
+    I(p, n) <+ V(p, n) * (goff + (gon - goff) * ctrl_frac);
+  end
+endmodule

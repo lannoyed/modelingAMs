@@ -1,0 +1,93 @@
+// sc_tripler.vams — two-flying-capacitor series-parallel switched-capacitor
+// converter, 1:3 step-up (Vout = 3*Vin ideal).
+//
+// Why: the physical netlist, not an algebraic transfer function. R_out (the
+// SSL/FSL output-impedance corner) is never computed as a formula here -- it
+// is an emergent property of this netlist's charge redistribution and switch
+// resistance under a transient fsw/Iload sweep. That keeps the model correct
+// by construction if cap sizes or Ron values change later, instead of
+// requiring a hand-derived constant to be kept in sync with the topology.
+//
+// Topology (confirmed netlist):
+//   phi1 (charge):    C1, C2 each charge to Vin, in parallel, referenced to GND.
+//   phi2 (discharge):  C1 and C2 series-stack on top of Vin: Vin -> C1 -> N2 -> C2 -> Vout,
+//                      summing three Vin drops (Vin + Vin + Vin = 3*Vin at Vout).
+//   phi1/phi2 must be non-overlapping; overlap is a shoot-through fault, deliberately
+//   left reachable here (see connect-rule note) so the STIMULI plan can exercise it.
+//
+// Switch-stress tiers (voltage each switch/node blocks in phi2, the worst case):
+//   tier 1 (<= Vin):    S1a, S1b, S2a, S2b   (phi1 switches only ever see Vin)
+//   tier 2 (<= 2*Vin):  S3a, S3b, S4a        (C1_top/N2/C2_bot sit at 2*Vin in phi2)
+//   tier 3 (<= 3*Vin):  S4b                 (C2_top/Vout sit at 3*Vin in phi2)
+//
+// LRM/Symphony features: conservative `electrical` nodes throughout the charge-
+// transfer path; `phi1`/`phi2` are `logic` and cross into the analog domain
+// through an *explicit* l2e_module instance per phase (not Symphony's default
+// auto-insertion) because this boundary is timing-critical -- a wrong tr/tf
+// changes shoot-through behavior. Capacitors are direct `I <+ C*ddt(V)`
+// contributions (a one-line primitive doesn't earn its own sub-module);
+// switches are composed from the reusable `sc_switch` (see sc_switch.vams).
+//
+// Design patterns: Strategy on sc_switch's `ron` (0 isolates the SSL asymptote,
+// raising it brings in FSL -- same equation, no branching). Factory-style tier
+// selection: one `ron_tier{1,2,3}` parameter per stress tier instead of eight
+// independent per-switch parameters, mirroring the netlist's own 3-tier structure.
+//
+// Limitations: ideal caps (no ESR/ESL), ideal switches (see sc_switch.vams),
+// no internal non-overlap generation -- phi1/phi2 must be supplied correctly
+// dead-timed by the stimulus in the nominal case (separation of concerns: this
+// model contains no drive source, including no clock/phase generator).
+
+`include "disciplines.vams"
+`include "constants.vams"
+
+module sc_tripler(vin, vout, gnd, phi1, phi2);
+  inout vin, vout, gnd;
+  input phi1, phi2;
+
+  electrical vin, vout, gnd;
+  logic phi1, phi2;
+
+  parameter real c1   = 100n from (0:inf);   // flying cap 1 [F]
+  parameter real c2   = 100n from (0:inf);   // flying cap 2 [F]
+  parameter real cout = 1u   from (0:inf);   // output reservoir cap [F]
+
+  parameter real ron_tier1 = 50m  from (0:inf);   // Ron for tier-1 (<=Vin) switches [Ohm]
+  parameter real ron_tier2 = 50m  from (0:inf);   // Ron for tier-2 (<=2*Vin) switches [Ohm]
+  parameter real ron_tier3 = 50m  from (0:inf);   // Ron for tier-3 (<=3*Vin) switches [Ohm]
+  // Defaults equal across tiers; in real silicon a higher voltage-rated device
+  // often needs more area for the same Ron, so tier-3 devices commonly land
+  // higher than tier-1 for a fixed die budget. Override per your device library.
+  parameter real roff = 100M from (0:inf);        // shared off-state leakage resistance [Ohm]
+
+  parameter real t_edge = 1n from (0:inf);   // phase switch turn-on/off edge [s], fed to l2e_module
+
+  electrical c1_top, c1_bot, c2_top, c2_bot, n2;
+  electrical phi1_a, phi2_a;   // CM-smoothed analog representation of phi1/phi2
+
+  // --- explicit connect modules: logic phase -> analog control node ---
+  // Timing-critical boundary (dead-time / shoot-through hinge on tr/tf), so
+  // instantiated explicitly with t_edge rather than relying on Symphony's
+  // default auto-inserted CM edge.
+  l2e_module #(.tr(t_edge), .tf(t_edge)) u_phi1_cm (.l(phi1), .e(phi1_a));
+  l2e_module #(.tr(t_edge), .tf(t_edge)) u_phi2_cm (.l(phi2), .e(phi2_a));
+
+  // --- phi1 (charge): C1, C2 in parallel across Vin -> GND ---
+  sc_switch #(.ron(ron_tier1), .roff(roff), .tier(1)) u_s1a (.p(c1_top), .n(vin), .ctrl(phi1_a));
+  sc_switch #(.ron(ron_tier1), .roff(roff), .tier(1)) u_s1b (.p(c1_bot), .n(gnd), .ctrl(phi1_a));
+  sc_switch #(.ron(ron_tier1), .roff(roff), .tier(1)) u_s2a (.p(c2_top), .n(vin), .ctrl(phi1_a));
+  sc_switch #(.ron(ron_tier1), .roff(roff), .tier(1)) u_s2b (.p(c2_bot), .n(gnd), .ctrl(phi1_a));
+
+  // --- phi2 (discharge): C1, C2 series-stacked on top of Vin -> Vout ---
+  sc_switch #(.ron(ron_tier2), .roff(roff), .tier(2)) u_s3a (.p(c1_bot), .n(vin),  .ctrl(phi2_a));
+  sc_switch #(.ron(ron_tier2), .roff(roff), .tier(2)) u_s3b (.p(c1_top), .n(n2),   .ctrl(phi2_a));
+  sc_switch #(.ron(ron_tier2), .roff(roff), .tier(2)) u_s4a (.p(c2_bot), .n(n2),   .ctrl(phi2_a));
+  sc_switch #(.ron(ron_tier3), .roff(roff), .tier(3)) u_s4b (.p(c2_top), .n(vout), .ctrl(phi2_a));
+
+  analog begin
+    // Flying and output caps: direct charge-conservation contributions.
+    I(c1_top, c1_bot) <+ c1   * ddt(V(c1_top, c1_bot));
+    I(c2_top, c2_bot) <+ c2   * ddt(V(c2_top, c2_bot));
+    I(vout,   gnd)    <+ cout * ddt(V(vout,   gnd));
+  end
+endmodule
