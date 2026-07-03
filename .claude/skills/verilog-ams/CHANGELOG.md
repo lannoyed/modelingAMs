@@ -3,6 +3,24 @@
 Each accepted SKILL-UPDATE lands here, newest first.
 Format: `## YYYY-MM-DD — [ADD/REVISE] target — summary`
 
+## 2026-07-03 (later) — REVISE parameters.md — narrowed to `_top` vs. sub-module
+Corrects the entry directly below: the "strip `from` from every ANSI header"
+fix over-generalized from `generic_switch`'s single reproduced failure to
+`sc_tripler` too, without evidence `sc_tripler` ever failed. Reverted
+`sc_tripler` back to its original ANSI-header + `_PARAM.vams` + `from (...)`
+form and renamed it `sc_tripler_top`, establishing a `_top`-suffix naming
+convention: `_top` modules (terminal, never instantiated-with-overrides) use
+elaboration-time `from (...)` bounding via a `_PARAM.vams` file spliced inside
+`#( ... )`; sub-modules (instantiated with per-instance overrides, e.g.
+`generic_switch`) keep the bare-header + runtime-guard fix from the entry
+below, since override-binding reliability is specifically a sub-module
+concern. Also confirmed a `_PARAM.vams` file's comma-chained,
+semicolon-free parameter list only parses spliced inside `#( ... )` — moving
+the same `` `include`` into a module body does not parse (VAMS-2023 Annex A.2:
+module-body parameter declarations each need their own terminating `;`,
+that's not the grammar rule this file's shape depends on). See
+`pitfalls/parameters.md`'s two 2026-07-03 entries.
+
 ## 2026-07-03 — REVISE parameters.md, converter.md, SKILL.md
 `sc_switch` rebranded to `generic_switch` (dropped the `tier` parameter — it
 never fed an equation, pure traceability dead weight). Real Symphony

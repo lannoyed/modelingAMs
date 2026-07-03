@@ -1,0 +1,23 @@
+// sc_tripler_top_PARAM.vams — default parameter values for sc_tripler_top.
+// Included directly inside sc_tripler_top's ANSI parameter port list #( ... ),
+// so each value keeps its own elaboration-time range guard rather than being
+// a bare macro. This comma-chained, semicolon-free shape (repeated
+// `parameter real` keyword per line) is only legal spliced inside #( ... ):
+// per VAMS-2023 Annex A.2, `module_parameter_port_list ::= #( parameter_declaration
+// {, parameter_declaration} )` is the one grammar rule that chains whole
+// parameter_declarations with commas and no terminating `;`; everywhere else
+// (module body) each parameter_declaration is its own `;`-terminated
+// statement. Do not `` `include`` this file into a module body -- it will not
+// parse there. See pitfalls/parameters.md's "_top vs. sub-module" convention.
+//
+// Sub-modules (generic_switch) never include this file directly; they
+// receive values solely through instantiation parameter overrides from
+// sc_tripler_top.
+    parameter real c1        = 100n from (0:inf),   // flying cap 1 [F]
+    parameter real c2        = 100n from (0:inf),   // flying cap 2 [F]
+    parameter real ron_tier1 = 50m  from (0:inf),   // Ron for tier-1 (<=Vin) switches [Ohm]
+    parameter real ron_tier2 = 50m  from (0:inf),   // Ron for tier-2 (<=2*Vin) switches [Ohm]
+    parameter real ron_tier3 = 50m  from (0:inf),   // Ron for tier-3 (<=3*Vin) switches [Ohm]
+    parameter real roff      = 100M from (0:inf),   // shared off-state leakage resistance [Ohm]
+    parameter real trise     = 1n   from (0:inf),   // switch control turn-on edge [s]
+    parameter real tfall     = 1n   from (0:inf)    // switch control turn-off edge [s]

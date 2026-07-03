@@ -1,4 +1,4 @@
-# Stimulus Plan — `sc_tripler`
+# Stimulus Plan — `sc_tripler_top`
 
 Written plan only — no testbench, no `.do` scripts, no driver module. Sequences,
 corners, and what each is meant to expose.

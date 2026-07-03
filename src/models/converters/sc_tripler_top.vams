@@ -1,4 +1,4 @@
-// sc_tripler.vams — two-flying-capacitor series-parallel switched-capacitor
+// sc_tripler_top.vams — two-flying-capacitor series-parallel switched-capacitor
 // converter, 1:3 step-up (Vout = 3*Vin ideal).
 //
 // Why: the physical netlist, not an algebraic transfer function. R_out (the
@@ -38,13 +38,23 @@
 // Factory-style tier selection: one `ron_tier{1,2,3}` parameter per stress
 // tier instead of eight independent per-switch parameters, mirroring the
 // netlist's own 3-tier structure -- generic_switch itself carries no tier
-// concept (dropped along with the rebrand, see generic_switch.vams), so this
-// tiering lives entirely in this module's parameter naming and instantiation
-// choices, not in a passthrough field on the sub-module.
+// concept (dropped along with the sc_switch -> generic_switch rebrand), so
+// this tiering lives entirely in this module's parameter naming and
+// instantiation choices, not in a passthrough field on the sub-module.
 //
-// Parameters: all defaults come from sc_tripler_PARAM.vams (included below),
-// this being the top block; generic_switch never includes that file -- it
-// only receives values through the instantiation overrides here.
+// Naming/parameter convention ("_top" vs. sub-module, see
+// pitfalls/parameters.md): this is a `_top` block -- the terminal module a
+// testbench instantiates directly, never itself instantiated-with-overrides
+// by anything else in this repo. That means override-binding reliability
+// (the reason generic_switch's own header stays bare) isn't a constraint
+// here, so this module keeps the ANSI-header + <NAME>_PARAM.vams convention
+// with `from (0:inf)` elaboration-time range guards, spliced directly inside
+// `#( ... )` -- the one grammar context (VAMS-2023 module_parameter_port_list)
+// where a comma-chained, semicolon-free run of `parameter_declaration`s is
+// legal. c1/c2 (which this module reads directly in its own `<+`
+// contributions) get that same elaboration-time check for free from the
+// PARAM file; ron_tier1/2/3, roff, trise, tfall are pure passthrough
+// overrides into generic_switch, which range-guards them itself at runtime.
 //
 // Limitations: ideal caps (no ESR/ESL), ideal switches (see
 // generic_switch.vams), no internal non-overlap generation -- phi1/phi2 must
@@ -55,8 +65,8 @@
 `include "disciplines.vams"
 `include "constants.vams"
 
-module sc_tripler #(
-`include "sc_tripler_PARAM.vams"
+module sc_tripler_top #(
+`include "sc_tripler_top_PARAM.vams"
 ) (
     inout vin, vout, gnd,
     input wire phi1, phi2
@@ -76,26 +86,11 @@ module sc_tripler #(
   generic_switch #(.ron(ron_tier2), .roff(roff), .trise(trise), .tfall(tfall)) u_s4a (.p(c2_bot), .n(n2),   .ctrl(phi2));
   generic_switch #(.ron(ron_tier3), .roff(roff), .trise(trise), .tfall(tfall)) u_s4b (.p(c2_top), .n(vout), .ctrl(phi2));
 
-  // c1/c2 feed this module's own <+ contributions directly (unlike
-  // ron_tier*/roff/trise/tfall, which are pure passthrough overrides into
-  // generic_switch and are guarded there) -- range-guarded here at runtime
-  // since Symphony rejects `from`/`exclude` in the ANSI header (see
-  // sc_tripler_PARAM.vams).
-  localparam real c1_default = 100n;
-  localparam real c2_default = 100n;
-  localparam real c1_g = (c1 > 0.0) ? c1 : c1_default;
-  localparam real c2_g = (c2 > 0.0) ? c2 : c2_default;
-
   analog begin
-    @(initial_step) begin
-      if (c1 <= 0.0)
-        $display("WARNING sc_tripler %m: c1=%g out of range (0:inf), clamped to %g", c1, c1_g);
-      if (c2 <= 0.0)
-        $display("WARNING sc_tripler %m: c2=%g out of range (0:inf), clamped to %g", c2, c2_g);
-    end
-
-    // Flying caps: direct charge-conservation contributions.
-    I(c1_top, c1_bot) <+ c1_g * ddt(V(c1_top, c1_bot));
-    I(c2_top, c2_bot) <+ c2_g * ddt(V(c2_top, c2_bot));
+    // Flying caps: direct charge-conservation contributions. c1/c2 are
+    // already elaboration-time range-guarded by `from (0:inf)` in
+    // sc_tripler_top_PARAM.vams -- no runtime clamp needed here.
+    I(c1_top, c1_bot) <+ c1 * ddt(V(c1_top, c1_bot));
+    I(c2_top, c2_bot) <+ c2 * ddt(V(c2_top, c2_bot));
   end
 endmodule
