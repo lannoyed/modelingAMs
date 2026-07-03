@@ -29,9 +29,12 @@
 // overrides, e.g. by sc_tripler_top), so its ANSI header stays bare -- no
 // `from`/`exclude` -- to keep those overrides binding reliably at Symphony
 // elaboration (see pitfalls/parameters.md's `_top`-vs-sub-module convention).
-// Ranges are checked at runtime instead: `$error` at t=0 on an out-of-range
-// override halts the run with a clear diagnostic rather than silently
-// substituting a default or letting a divide-by-zero/negative-time
+// Ranges are checked at runtime instead, in their own `analog initial` block
+// (LRM 2.4/VAMS-2023's shorthand for `analog @(initial_step)`, kept as a
+// separate top-level analog construct rather than nested inside the main one
+// so the guard reads as its own concern): `$error` at t=0 on an
+// out-of-range override halts the run with a clear diagnostic rather than
+// silently substituting a default or letting a divide-by-zero/negative-time
 // propagate into the analog equations.
 //
 // Limitations: no charge-injection, no dV/dt-dependent Ron, no body diode.
@@ -56,18 +59,23 @@ module generic_switch #(
   localparam real gon  = 1.0 / ron;    // parameter-time constants: computed once, not per analog evaluation
   localparam real goff = 1.0 / roff;
 
-  analog begin
-    @(initial_step) begin
-      if (ron <= 0.0)
-        $error("generic_switch %m: ron=%g out of range (0:inf)", ron);
-      if (roff <= 0.0)
-        $error("generic_switch %m: roff=%g out of range (0:inf)", roff);
-      if (trise <= 0.0)
-        $error("generic_switch %m: trise=%g out of range (0:inf)", trise);
-      if (tfall <= 0.0)
-        $error("generic_switch %m: tfall=%g out of range (0:inf)", tfall);
-    end
+  // Parameter guard, its own analog block so it's not tangled with the
+  // conduction physics below -- runs once, same as @(initial_step) would,
+  // but reads as a standalone concern rather than a nested block inside it.
+  analog initial begin
+    if (ron <= 0.0)
+      $error("generic_switch %m: ron=%g out of range (0:inf)", ron);
+    if (roff <= 0.0)
+      $error("generic_switch %m: roff=%g out of range (0:inf)", roff);
+    if (trise <= 0.0)
+      $error("generic_switch %m: trise=%g out of range (0:inf)", trise);
+    if (tfall <= 0.0)
+      $error("generic_switch %m: tfall=%g out of range (0:inf)", tfall);
+  end
 
+  analog begin
+    // ctrl === 1 falls through to goff (off) on x/z, not just a clean 0 --
+    // the safer failure mode when the digital side hasn't resolved yet.
     I(p, n) <+ V(p, n) * transition((ctrl === 1) ? gon : goff, 0, trise, tfall);
   end
 endmodule
