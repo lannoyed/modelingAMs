@@ -3,6 +3,16 @@
 Each accepted SKILL-UPDATE lands here, newest first.
 Format: `## YYYY-MM-DD — [ADD/REVISE] target — summary`
 
+## 2026-07-03 (final) — REVISE parameters.md, generic_switch.vams — guard block is plain `initial`, not `analog`
+Symphony accepts exactly one `analog` block per module (in tension with
+VAMS-2023 §6.2, which permits multiple — another tool restriction, not a spec
+rule, same pattern as the ANSI-header `from` finding). Moved the parameter
+guard out of the `analog` block entirely into a plain digital `initial`
+block, which has no such restriction and works identically for elaboration-
+time `$error` checks on `real` parameters. `generic_switch.vams` now has one
+`initial` block (guards) and one `analog` block (the `<+` contribution),
+never merged. See `pitfalls/parameters.md`'s final 2026-07-03 entry.
+
 ## 2026-07-03 (latest) — REVISE parameters.md, generic_switch.vams — `$error`, not clamp-and-warn
 Sub-module runtime range guard simplified: `@(initial_step) $error(...)` on an
 out-of-range override, no `localparam` clamp-to-default and no `$display`

@@ -197,3 +197,30 @@ parameter is used) read the raw parameter directly, since if it were
 out-of-range `$error` has already stopped elaboration before those values
 matter. See `src/models/converters/generic_switch.vams` for the current
 reference implementation.
+
+## 2026-07-03 (final) — REVISE — guard block: plain `initial`, not `analog`/`@(initial_step)`
+Further refines the same guard, same conclusion elsewhere unchanged. Symphony
+accepts exactly **one `analog` block per module** — note this sits in tension
+with VAMS-2023 §6.2's own text ("A module definition may have multiple analog
+blocks... internally combine into a single analog block in the order that
+[they] appear"), so, same pattern as the ANSI-header `from` finding, treat it
+as a tool restriction to design around, not a spec rule. Nesting the guard
+inside the main `analog` block via `@(initial_step)` (or giving it its own
+`analog initial` block, which not all tools support as a separate top-level
+construct either) both risk colliding with that one-block limit or the
+guard's own syntax. A plain digital `initial` block has no such
+restriction — Verilog allows any number of them — and `$error`/parameter
+reads work identically there since parameters are elaboration-time constants
+regardless of domain:
+```verilog
+initial begin
+  if (tfall <= 0.0)
+    $error("generic_switch %m: tfall=%g out of range (0:inf)", tfall);
+end
+
+analog begin
+  I(p, n) <+ ...;
+end
+```
+One `initial` block for guards, one `analog` block for the physics — never
+merge the two, and never add a second `analog` block to hold more guards.
