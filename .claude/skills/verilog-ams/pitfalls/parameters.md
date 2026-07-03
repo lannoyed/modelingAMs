@@ -176,3 +176,24 @@ spliced inside `#( ... )`. Moving that same `` `include`` into a module body —
 tried as an intermediate fix — does not parse; body-level parameter
 declarations each need their own terminating `;`. See the "Rules" section
 above for the corrected, precise statement of both conventions.
+
+## 2026-07-03 (later still) — REVISE — sub-module runtime guard: `$error`, not clamp-and-warn
+Refines the runtime-guard mechanism from the two entries above (the
+`_top`-vs-sub-module split itself is unchanged). Original version clamped an
+out-of-range override to the module's own default (`(x > 0.0) ? x :
+x_default`) and reported it with `$display`, so the sim kept running on a
+substituted value. Simpler and more honest: `$error` at `@(initial_step)` on
+the raw parameter, no clamp, no substituted default:
+```verilog
+if (tfall <= 0.0)
+  $error("generic_switch %m: tfall=%g out of range (0:inf)", tfall);
+```
+A bad override is a configuration mistake, not a recoverable runtime
+condition — silently continuing on a value the caller didn't ask for hides
+the mistake instead of surfacing it. `$error` halts the run with the
+offending value and instance path (`%m`) instead. No `_default` localparams,
+no `_g`-suffixed clamped variables — `gon`/`goff` (and anywhere else a guarded
+parameter is used) read the raw parameter directly, since if it were
+out-of-range `$error` has already stopped elaboration before those values
+matter. See `src/models/converters/generic_switch.vams` for the current
+reference implementation.

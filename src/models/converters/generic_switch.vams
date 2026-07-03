@@ -6,8 +6,8 @@
 // Newton never sees a hard branch. One reusable primitive replaces per-site
 // copy-pasted conductance equations (composition over copy-paste). This
 // module carries no notion of what circuit instantiates it or what voltage it
-// blocks -- that bookkeeping (e.g. sc_tripler's ron_tier1/2/3 naming) belongs
-// to the caller, not here (see "Dropped: tier" below).
+// blocks -- that bookkeeping (e.g. sc_tripler_top's ron_tier1/2/3 naming)
+// belongs to the caller, not here (see "Dropped: tier" below).
 //
 // LRM/Symphony features: `ctrl` is a plain digital `wire`; Symphony's
 // automatic D2A connect module supplies its resolved real value where the
@@ -25,19 +25,14 @@
 // same stress-tier intent through parameter naming (ron_tier1/2/3) or a
 // comment at the instantiation site instead of a carried-but-unused port.
 //
-// Range guards: `from`/`exclude` value-range clauses are legal here per
-// VAMS-2023 Annex A.2 -- module_parameter_port_list, non_port_module_item,
-// and body-level parameter_declaration all resolve through the same
-// parameter_declaration -> list_of_param_assignments -> param_assignment
-// production, and value_range attaches to param_assignment itself, so the
-// grammar draws no ANSI-header-vs-body distinction. Siemens Symphony's ADMS
-// front end rejects them inside the ANSI parameter port list anyway
-// ("received keyword 'from' while expecting ')'") -- a tool nonconformance,
-// not an LRM restriction. Since named instantiation overrides only bind
-// reliably through the ANSI header on this tool (pitfalls/parameters.md),
-// ranges are enforced at runtime instead: an out-of-range override is
-// reported once at t=0 and clamped to this module's own default so the sim
-// keeps running on a defined value rather than failing silently.
+// Range guards: this is a sub-module (instantiated with per-instance
+// overrides, e.g. by sc_tripler_top), so its ANSI header stays bare -- no
+// `from`/`exclude` -- to keep those overrides binding reliably at Symphony
+// elaboration (see pitfalls/parameters.md's `_top`-vs-sub-module convention).
+// Ranges are checked at runtime instead: `$error` at t=0 on an out-of-range
+// override halts the run with a clear diagnostic rather than silently
+// substituting a default or letting a divide-by-zero/negative-time
+// propagate into the analog equations.
 //
 // Limitations: no charge-injection, no dV/dt-dependent Ron, no body diode.
 // Ideal-switch macromodel only; sufficient for exploring the SSL/FSL
@@ -48,43 +43,31 @@
 `include "constants.vams"
 
 module generic_switch #(
-    parameter real ron   = 50e-3,  // on-resistance [Ohm]; must be > 0, else clamped (see analog initial guard)
-    parameter real roff  = 100e6,  // off leakage resistance [Ohm]; must be > 0, else clamped
-    parameter real trise = 1e-9,   // control turn-on edge [s]; must be > 0, else clamped
-    parameter real tfall = 1e-9    // control turn-off edge [s]; must be > 0, else clamped
+    parameter real ron   = 50e-3,  // on-resistance [Ohm]; must be > 0
+    parameter real roff  = 100e6,  // off leakage resistance [Ohm]; must be > 0
+    parameter real trise = 1e-9,   // control turn-on edge [s]; must be > 0
+    parameter real tfall = 1e-9    // control turn-off edge [s]; must be > 0
 ) (
     inout p, n,
     input wire ctrl
 );
   electrical p, n;
 
-  // Elaboration-time defaults, reused as the clamp target for a bad override
-  // (see the analog initial guard below).
-  localparam real ron_default   = 50e-3;
-  localparam real roff_default  = 100e6;
-  localparam real trise_default = 1e-9;
-  localparam real tfall_default = 1e-9;
-
-  localparam real ron_g   = (ron   > 0.0) ? ron   : ron_default;
-  localparam real roff_g  = (roff  > 0.0) ? roff  : roff_default;
-  localparam real trise_g = (trise > 0.0) ? trise : trise_default;
-  localparam real tfall_g = (tfall > 0.0) ? tfall : tfall_default;
-
-  localparam real gon  = 1.0 / ron_g;    // parameter-time constants: computed once, not per analog evaluation
-  localparam real goff = 1.0 / roff_g;
+  localparam real gon  = 1.0 / ron;    // parameter-time constants: computed once, not per analog evaluation
+  localparam real goff = 1.0 / roff;
 
   analog begin
     @(initial_step) begin
       if (ron <= 0.0)
-        $display("WARNING generic_switch %m: ron=%g out of range (0:inf), clamped to %g", ron, ron_g);
+        $error("generic_switch %m: ron=%g out of range (0:inf)", ron);
       if (roff <= 0.0)
-        $display("WARNING generic_switch %m: roff=%g out of range (0:inf), clamped to %g", roff, roff_g);
+        $error("generic_switch %m: roff=%g out of range (0:inf)", roff);
       if (trise <= 0.0)
-        $display("WARNING generic_switch %m: trise=%g out of range (0:inf), clamped to %g", trise, trise_g);
+        $error("generic_switch %m: trise=%g out of range (0:inf)", trise);
       if (tfall <= 0.0)
-        $display("WARNING generic_switch %m: tfall=%g out of range (0:inf), clamped to %g", tfall, tfall_g);
+        $error("generic_switch %m: tfall=%g out of range (0:inf)", tfall);
     end
 
-    I(p, n) <+ V(p, n) * transition((ctrl === 1) ? gon : goff, 0, trise_g, tfall_g);
+    I(p, n) <+ V(p, n) * transition((ctrl === 1) ? gon : goff, 0, trise, tfall);
   end
 endmodule

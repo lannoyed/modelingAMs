@@ -3,6 +3,17 @@
 Each accepted SKILL-UPDATE lands here, newest first.
 Format: `## YYYY-MM-DD — [ADD/REVISE] target — summary`
 
+## 2026-07-03 (latest) — REVISE parameters.md, generic_switch.vams — `$error`, not clamp-and-warn
+Sub-module runtime range guard simplified: `@(initial_step) $error(...)` on an
+out-of-range override, no `localparam` clamp-to-default and no `$display`
+warning. A bad override is a configuration mistake, not something to paper
+over with a substituted default — `$error` halts the run with the offending
+value instead of continuing on a value the caller never asked for.
+`generic_switch.vams` reads `ron`/`roff`/`trise`/`tfall` directly (no
+`_g`-suffixed clamped variables) since `$error` has already stopped
+elaboration before an out-of-range value could reach the analog equations.
+See `pitfalls/parameters.md`'s latest 2026-07-03 entry.
+
 ## 2026-07-03 (later) — REVISE parameters.md — narrowed to `_top` vs. sub-module
 Corrects the entry directly below: the "strip `from` from every ANSI header"
 fix over-generalized from `generic_switch`'s single reproduced failure to
