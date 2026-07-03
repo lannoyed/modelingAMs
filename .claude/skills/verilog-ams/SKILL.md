@@ -48,7 +48,8 @@ Each = strategy notes + vetted module skeleton + stimulus-plan notes.
 - `connect_rules.md`— Symphony CM insertion, discipline resolution, interop
 - `units.md`        — dimensional balance in `<+` contributions
 - `parameters.md`   — ANSI-style parameter headers, `localparam` for derived
-  constants, the `<MODULE_NAME>_PARAM.vams` convention
+  constants, the `<MODULE_NAME>_PARAM.vams` convention, and why `from`/
+  `exclude` belongs in a runtime guard, not the ANSI header, on Symphony
 
 ## SKILL-UPDATE protocol (the self-upgrade loop)
 End every model with exactly one line:

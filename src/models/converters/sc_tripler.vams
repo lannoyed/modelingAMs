@@ -26,25 +26,31 @@
 //
 // LRM/Symphony features: conservative `electrical` nodes throughout the charge-
 // transfer path; `phi1`/`phi2` are plain digital `wire`s, connected straight
-// into each `sc_switch` instance -- the digital<->analog boundary is resolved
-// inside sc_switch via Symphony's automatic connect modules (see
-// disciplines.vams), not a project-specific connect module. Capacitors are
-// direct `I <+ C*ddt(V)` contributions (a one-line primitive doesn't earn its
-// own sub-module); switches are composed from the reusable `sc_switch`.
+// into each `generic_switch` instance -- the digital<->analog boundary is
+// resolved inside generic_switch via Symphony's automatic connect modules
+// (see disciplines.vams), not a project-specific connect module. Capacitors
+// are direct `I <+ C*ddt(V)` contributions (a one-line primitive doesn't earn
+// its own sub-module); switches are composed from the reusable
+// `generic_switch`.
 //
-// Design patterns: Strategy on sc_switch's `ron` (0 isolates the SSL asymptote,
-// raising it brings in FSL -- same equation, no branching). Factory-style tier
-// selection: one `ron_tier{1,2,3}` parameter per stress tier instead of eight
-// independent per-switch parameters, mirroring the netlist's own 3-tier structure.
+// Design patterns: Strategy on generic_switch's `ron` (0 isolates the SSL
+// asymptote, raising it brings in FSL -- same equation, no branching).
+// Factory-style tier selection: one `ron_tier{1,2,3}` parameter per stress
+// tier instead of eight independent per-switch parameters, mirroring the
+// netlist's own 3-tier structure -- generic_switch itself carries no tier
+// concept (dropped along with the rebrand, see generic_switch.vams), so this
+// tiering lives entirely in this module's parameter naming and instantiation
+// choices, not in a passthrough field on the sub-module.
 //
 // Parameters: all defaults come from sc_tripler_PARAM.vams (included below),
-// this being the top block; sc_switch never includes that file -- it only
-// receives values through the instantiation overrides here.
+// this being the top block; generic_switch never includes that file -- it
+// only receives values through the instantiation overrides here.
 //
-// Limitations: ideal caps (no ESR/ESL), ideal switches (see sc_switch.vams),
-// no internal non-overlap generation -- phi1/phi2 must be supplied correctly
-// dead-timed by the stimulus in the nominal case (separation of concerns: this
-// model contains no drive source, including no clock/phase generator).
+// Limitations: ideal caps (no ESR/ESL), ideal switches (see
+// generic_switch.vams), no internal non-overlap generation -- phi1/phi2 must
+// be supplied correctly dead-timed by the stimulus in the nominal case
+// (separation of concerns: this model contains no drive source, including no
+// clock/phase generator).
 
 `include "disciplines.vams"
 `include "constants.vams"
@@ -59,20 +65,37 @@ module sc_tripler #(
   electrical c1_top, c1_bot, c2_top, c2_bot, n2;
 
   // --- phi1 (charge): C1, C2 in parallel across Vin -> GND ---
-  sc_switch #(.ron(ron_tier1), .roff(roff), .tier(1), .trise(trise), .tfall(tfall)) u_s1a (.p(c1_top), .n(vin), .ctrl(phi1));
-  sc_switch #(.ron(ron_tier1), .roff(roff), .tier(1), .trise(trise), .tfall(tfall)) u_s1b (.p(c1_bot), .n(gnd), .ctrl(phi1));
-  sc_switch #(.ron(ron_tier1), .roff(roff), .tier(1), .trise(trise), .tfall(tfall)) u_s2a (.p(c2_top), .n(vin), .ctrl(phi1));
-  sc_switch #(.ron(ron_tier1), .roff(roff), .tier(1), .trise(trise), .tfall(tfall)) u_s2b (.p(c2_bot), .n(gnd), .ctrl(phi1));
+  generic_switch #(.ron(ron_tier1), .roff(roff), .trise(trise), .tfall(tfall)) u_s1a (.p(c1_top), .n(vin), .ctrl(phi1));
+  generic_switch #(.ron(ron_tier1), .roff(roff), .trise(trise), .tfall(tfall)) u_s1b (.p(c1_bot), .n(gnd), .ctrl(phi1));
+  generic_switch #(.ron(ron_tier1), .roff(roff), .trise(trise), .tfall(tfall)) u_s2a (.p(c2_top), .n(vin), .ctrl(phi1));
+  generic_switch #(.ron(ron_tier1), .roff(roff), .trise(trise), .tfall(tfall)) u_s2b (.p(c2_bot), .n(gnd), .ctrl(phi1));
 
   // --- phi2 (discharge): C1, C2 series-stacked on top of Vin -> Vout ---
-  sc_switch #(.ron(ron_tier2), .roff(roff), .tier(2), .trise(trise), .tfall(tfall)) u_s3a (.p(c1_bot), .n(vin),  .ctrl(phi2));
-  sc_switch #(.ron(ron_tier2), .roff(roff), .tier(2), .trise(trise), .tfall(tfall)) u_s3b (.p(c1_top), .n(n2),   .ctrl(phi2));
-  sc_switch #(.ron(ron_tier2), .roff(roff), .tier(2), .trise(trise), .tfall(tfall)) u_s4a (.p(c2_bot), .n(n2),   .ctrl(phi2));
-  sc_switch #(.ron(ron_tier3), .roff(roff), .tier(3), .trise(trise), .tfall(tfall)) u_s4b (.p(c2_top), .n(vout), .ctrl(phi2));
+  generic_switch #(.ron(ron_tier2), .roff(roff), .trise(trise), .tfall(tfall)) u_s3a (.p(c1_bot), .n(vin),  .ctrl(phi2));
+  generic_switch #(.ron(ron_tier2), .roff(roff), .trise(trise), .tfall(tfall)) u_s3b (.p(c1_top), .n(n2),   .ctrl(phi2));
+  generic_switch #(.ron(ron_tier2), .roff(roff), .trise(trise), .tfall(tfall)) u_s4a (.p(c2_bot), .n(n2),   .ctrl(phi2));
+  generic_switch #(.ron(ron_tier3), .roff(roff), .trise(trise), .tfall(tfall)) u_s4b (.p(c2_top), .n(vout), .ctrl(phi2));
+
+  // c1/c2 feed this module's own <+ contributions directly (unlike
+  // ron_tier*/roff/trise/tfall, which are pure passthrough overrides into
+  // generic_switch and are guarded there) -- range-guarded here at runtime
+  // since Symphony rejects `from`/`exclude` in the ANSI header (see
+  // sc_tripler_PARAM.vams).
+  localparam real c1_default = 100n;
+  localparam real c2_default = 100n;
+  localparam real c1_g = (c1 > 0.0) ? c1 : c1_default;
+  localparam real c2_g = (c2 > 0.0) ? c2 : c2_default;
 
   analog begin
+    @(initial_step) begin
+      if (c1 <= 0.0)
+        $display("WARNING sc_tripler %m: c1=%g out of range (0:inf), clamped to %g", c1, c1_g);
+      if (c2 <= 0.0)
+        $display("WARNING sc_tripler %m: c2=%g out of range (0:inf), clamped to %g", c2, c2_g);
+    end
+
     // Flying caps: direct charge-conservation contributions.
-    I(c1_top, c1_bot) <+ c1 * ddt(V(c1_top, c1_bot));
-    I(c2_top, c2_bot) <+ c2 * ddt(V(c2_top, c2_bot));
+    I(c1_top, c1_bot) <+ c1_g * ddt(V(c1_top, c1_bot));
+    I(c2_top, c2_bot) <+ c2_g * ddt(V(c2_top, c2_bot));
   end
 endmodule

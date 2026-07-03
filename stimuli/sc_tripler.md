@@ -54,7 +54,7 @@ the stimulus/testbench side of `vout` if ripple filtering is needed.
    with both phases high, `vin` sees a low-impedance path to `gnd` through
    whichever switches are on tier-1 (`S1a/S1b/S2a/S2b`) simultaneously with
    tier-2/3 paths engaged. Confirm this shows up as a current spike, not a
-   convergence failure (the smooth `transition()` edges inside `sc_switch`
+   convergence failure (the smooth `transition()` edges inside `generic_switch`
    should keep Newton happy even in this fault state).
 
 6. **Load step** — step `Iload` between two levels with phases running at

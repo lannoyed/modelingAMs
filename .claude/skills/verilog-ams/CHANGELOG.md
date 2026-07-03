@@ -3,6 +3,21 @@
 Each accepted SKILL-UPDATE lands here, newest first.
 Format: `## YYYY-MM-DD — [ADD/REVISE] target — summary`
 
+## 2026-07-03 — REVISE parameters.md, converter.md, SKILL.md
+`sc_switch` rebranded to `generic_switch` (dropped the `tier` parameter — it
+never fed an equation, pure traceability dead weight). Real Symphony
+elaboration of `from (0:inf)` inside an ANSI `#( ... )` parameter port list
+failed (`received keyword 'from' while expecting ')'`); traced against
+VAMS-2023 Annex A.2 grammar and confirmed the LRM draws no distinction between
+ANSI-header and body-level parameter positions for `value_range` — this is a
+Symphony ADMS nonconformance, not a spec rule. New convention: ANSI headers
+stay bare (no `from`/`exclude`), ranges enforced at runtime via an
+`@(initial_step)` guard (`$display` warning) plus a `localparam` clamp. See
+`pitfalls/parameters.md`'s 2026-07-03 entry and
+`src/models/converters/generic_switch.vams` for the reference pattern.
+`patterns/converter.md`'s reusable-switch-sub-module guidance updated to match
+(module renamed, no `tier` field on the sub-module).
+
 ## 2026-07-01 — REVISE connect_rules.md, convergence.md, SKILL.md; ADD parameters.md; REVISE converter.md
 Feedback from the `sc_tripler`/`sc_switch` SC converter model review:
 - **SUPERSEDED:** "state connectrules explicitly / make the CM explicit by
