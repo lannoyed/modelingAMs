@@ -80,14 +80,18 @@ non-overlapping clock phases rather than sampling a continuous input.
   impedance and its SSL/FSL corner **emerge** from a transient `fsw`x`Iload`
   sweep in the STIMULI stage instead.
 - **Reusable switch sub-module, not eight copy-pasted conductances.** One
-  `sc_switch`-style module (electrical `p`,`n`; digital `wire ctrl`; ANSI
-  parameters `ron`, `roff`) instantiated once per phase switch. Strategy
+  `generic_switch`-style module (electrical `p`,`n`; digital `wire ctrl`; bare
+  ANSI parameters `ron`, `roff` — no `from`/`exclude` on them, see
+  `pitfalls/parameters.md`) instantiated once per phase switch. Strategy
   pattern on `ron` (0 isolates the SSL asymptote in a sweep; raising it brings
   in FSL — same equation, no branching). Factory-style tier selection: if the
   topology has N distinct voltage-stress tiers (a series-stacking topology
   usually does — each node sits at a different multiple of Vin), expose one
   `ron_tier{1..N}` parameter per tier at the top level rather than one
-  parameter per switch instance.
+  parameter per switch instance. Don't carry a `tier` field on the switch
+  sub-module itself unless it actually feeds an equation there — a
+  traceability-only parameter that never reaches an `<+` contribution is dead
+  weight on every instance; keep the tiering in the top level's naming.
 - **Clock phases are digital `wire` ports, driven entirely externally** — no
   internal non-overlap/dead-time generator in the model (separation of
   concerns: a model contains no drive source). This also keeps a deliberate
