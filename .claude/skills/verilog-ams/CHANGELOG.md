@@ -3,6 +3,16 @@
 Each accepted SKILL-UPDATE lands here, newest first.
 Format: `## YYYY-MM-DD — [ADD/REVISE] target — summary`
 
+## 2026-07-06 — ADD convergence.md (+ CLAUDE.md ground rule) — digital clocks & repo-wide timescale
+First purely-digital blocks (`generic_clkgen`, `generic_sr_nonoverlap`): generate
+clock/phases in the event-driven digital kernel (one analog breakpoint per edge, not
+an analog source Newton must integrate), consumer owns the edge via `transition()`.
+Repo-wide `` `timescale 1ns / 1ps`` added as a CLAUDE.md Symphony ground rule — a `#`
+delay is in ns, so express timing parameters directly in ns (period/dead-time), fed
+straight to `#`; no seconds/Hz parameter or `TUNIT`/`1e-9` scale constant (the unit
+lives on the `timescale line). Mind the 1 ps floor. `reg`+`always`+`initial clk=0` over a self-referential net oscillator, which
+latches at `x` (a net can't be seeded).
+
 ## 2026-07-03 (final) — REVISE parameters.md, generic_switch.vams — guard block is plain `initial`, not `analog`
 Symphony accepts exactly one `analog` block per module (in tension with
 VAMS-2023 §6.2, which permits multiple — another tool restriction, not a spec

@@ -32,3 +32,27 @@ module parameters. This is now the default pattern for any switch/gate whose
 on/off state is driven by a digital net; only fall back to a hand-declared
 connect module for a boundary need `transition()` at the point of use can't
 cover (see `pitfalls/connect_rules.md`).
+
+## 2026-07-06 — ADD — digital `#` delays: repo-wide `timescale 1ns/1ps, parameters in ns
+First purely-digital blocks in the repo (`generic_clkgen`, `generic_sr_nonoverlap`)
+generate a clock/phases in the event-driven digital kernel — the correct AMS
+choice: an analog square-wave source would force Newton to integrate a stiff,
+fast-switching node every cycle, whereas a digital clock costs the analog solver
+only one breakpoint per edge. Two rules that come with that:
+- **Generate the clock digitally, not as an analog source.** No `analog` block;
+  the output is a raw digital `wire`/`reg`. The finite edge Newton needs is applied
+  by the *consumer* via `transition()` at its own boundary — never pre-shape the
+  edge in the clock module (double-smoothing).
+- **One repo-wide `` `timescale 1ns / 1ps`` (CLAUDE.md ground rule).** A `#` delay
+  is therefore in **nanoseconds**. Express timing parameters **directly in that unit**
+  (a period/dead-time in ns, e.g. `parameter real tperiod = 1000.0;` for a 1 MHz
+  clock) and feed them straight to `#` — no seconds/Hz parameter, no `TUNIT`/`1e-9`
+  scale constant; the unit lives on the `` `timescale`` line (mainstream RTL
+  convention). Nothing in the engineering philosophy mandates SI-unit parameters —
+  "range-guarded" and "translation layer (for nontrivial metrics)" are unit-agnostic,
+  and a period isn't such a metric. Anything below the 1 ps precision rounds to zero
+  (the floor on `tnov` / on clock resolution — ~0.1% of the period at 1 GHz). A
+  self-referential net oscillator
+  (`assign #d clk = ~clk & en;`) is rejected: a net can't be seeded, so `clk`
+  latches at `x` forever when `en` is high at t=0 (`~x&1 = x`). Use `reg` + `always`
+  with `initial clk = 0` so a free-running clock actually starts.
