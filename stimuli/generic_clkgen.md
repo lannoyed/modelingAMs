@@ -14,7 +14,7 @@ corners, and what each is meant to expose.
 
 1. **Steady enable, measure period/duty** — hold `en = 1` and let the clock
    free-run for many cycles. Exposes: that the period equals `1/freq` and the
-   high-time equals `duty/freq` to within the `` `timescale`` precision (1 fs).
+   high-time equals `duty/freq` to within the `` `timescale`` precision (10 ps).
    Confirms the derived `thigh`/`tlow` split and that edges land on exact,
    drift-free times (period is constant cycle-to-cycle, not creeping).
 
@@ -46,9 +46,9 @@ corners, and what each is meant to expose.
 
 | Parameter | Corner values | Why |
 |---|---|---|
-| `freq` | the parent circuit's real switching frequency, plus ~decade above/below | period should track `1/freq` exactly; the decade span checks the 1 fs grid is fine enough at the high end and the event count sane at the low end |
+| `freq` | the parent circuit's real switching frequency, plus ~decade above/below | period should track `1/freq`; the high end checks that the 10 ps precision floor is still a small fraction of the half period (~1% at 1 GHz), the low end that the event count stays sane |
 | `duty` | 0.5, and a deliberately asymmetric value (e.g. 0.3) | confirms `thigh`/`tlow` split independently and that a non-50% clock is available for a downstream generator that needs it |
-| `` `timescale`` | default 1 fs precision, and a coarsened 1 ps build | edge-time accuracy should be visually unchanged for a <= GHz clock; documents the accuracy-vs-event-grid tradeoff called out in the header |
+| `freq` near the precision floor | a clock whose half period approaches ~10 ps | exposes the fixed `` `timescale 1ns/10ps`` (repo-wide) precision floor on edge placement — the point below which this generator can no longer resolve the intended timing |
 | `en` | clean 0/1 burst, and `x` | sequences 2 and 3 |
 
 ## Translation notes (plain-English, next to the relevant sequence)

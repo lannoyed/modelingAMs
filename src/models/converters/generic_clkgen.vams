@@ -17,16 +17,18 @@
 //   to place a breakpoint at each edge; it never integrates the oscillator.
 //   This is the single biggest efficiency/convergence choice for an AMS clock.
 //
-// Why `timescale 1s / 1fs specifically:
-//   With a 1-second time unit, every `#` delay below is expressed in literal
-//   SECONDS, so digital time coincides with the analog kernel's `$abstime` --
-//   no unit-mismatch between the freq-derived real delays and simulation time.
-//   1fs precision places each edge to within 0.5 fs (< 1 part in 5e14 at
-//   1 MHz); because `#(thigh)` waits the same rounded delta every cycle the
-//   clock is perfectly periodic with only a fixed, negligible frequency
-//   offset -- not accumulating drift, so no per-edge `$abstime` anchoring is
-//   needed. Relax to 1ps if a very long run makes the 1fs event grid costly;
-//   accuracy is unaffected for <= GHz clocks.
+// Timescale and the seconds->time-unit conversion:
+//   The module uses the repo-wide `timescale 1ns / 10ps (see CLAUDE.md ground
+//   rules -- one unit/precision for every module in this library). That makes a
+//   `#` delay a count of NANOSECONDS, not seconds. The user-facing parameters
+//   stay physical (freq in Hz), so the freq-derived high/low times -- which are
+//   in SECONDS -- are converted to time units once, at elaboration, by dividing
+//   by the 1 ns unit (localparam TUNIT below). Edge placement is quantized to
+//   the 10 ps precision: for a 1 MHz clock that is 1 part in 1e5 of the half
+//   period, negligible; for a ~GHz clock it is ~1% of the period, so treat 10 ps
+//   as the floor on usable clock resolution here. Because `#(thigh)` waits the
+//   same rounded delta every cycle the clock is still perfectly periodic (a
+//   fixed sub-precision frequency offset, not accumulating drift).
 //
 // Edge shaping is NOT done here: `clk` is a raw digital `wire`. The finite
 // rise/fall Newton needs at the analog boundary is applied by the CONSUMER via
@@ -51,7 +53,7 @@
 // consumer shapes them), no jitter, no phase noise, no startup ramp. A
 // behavioural timing source, not a physical oscillator model.
 
-`timescale 1s / 1fs
+`timescale 1ns / 10ps
 `include "disciplines.vams"
 `include "constants.vams"
 
@@ -65,10 +67,12 @@ module generic_clkgen #(
     wire en;
     reg  clk;
 
-    // Derived timing, computed once at elaboration (not per event). In seconds
-    // because of `timescale 1s above, so they feed `#` delays directly.
-    localparam real thigh = duty / freq;           // high phase [s]
-    localparam real tlow  = (1.0 - duty) / freq;   // low  phase [s]
+    // Derived timing, computed once at elaboration (not per event). The `#`
+    // delays run in `timescale units (1 ns), so convert the physical seconds
+    // (duty/freq) to time units by dividing by the 1 ns unit -- see header.
+    localparam real TUNIT = 1e-9;                          // `timescale unit [s]
+    localparam real thigh = (duty / freq) / TUNIT;         // high phase [1ns units]
+    localparam real tlow  = ((1.0 - duty) / freq) / TUNIT; // low  phase [1ns units]
 
     // Parameter guard: plain `initial`, separate from the timing `always`.
     initial begin
