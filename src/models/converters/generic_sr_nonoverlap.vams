@@ -59,12 +59,17 @@
 module generic_sr_nonoverlap #(
     parameter real tnov = 1.0      // non-overlap dead time [ns] (== `timescale unit); must be > 0
 ) (
-    input  clk,                    // reference clock (digital wire)
-    output phi1,                   // phase 1: high while clk is low
-    output phi2                    // phase 2: high while clk is high
+    clk,                           // reference clock (digital wire)
+    phi1,                          // phase 1: high while clk is low
+    phi2                           // phase 2: high while clk is high
 );
-    wire clk, phi1, phi2;
-    wire clk_b;
+    // Non-ANSI port style: bare names above, direction + net type here once.
+    // Do NOT also give a directioned ANSI header AND a body `wire` for a port
+    // -- that re-declares the net and Symphony rejects it (pitfalls/ports.md).
+    input  wire clk;
+    output wire phi1;
+    output wire phi2;
+    wire clk_b;                    // internal net
 
     // Parameter guard: plain `initial`, no analog block in this module at all.
     initial begin

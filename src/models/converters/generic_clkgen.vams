@@ -60,11 +60,15 @@ module generic_clkgen #(
     parameter real tperiod = 1000.0,  // clock period [ns] (== `timescale unit); must be > 0
     parameter real duty    = 0.5      // high-time fraction [-]; must be in (0:1)
 ) (
-    input  en,                        // enable (digital wire): 1 = run, else park low
-    output clk                        // clock out (digital); driven procedurally
+    en,                               // enable (digital wire): 1 = run, else park low
+    clk                               // clock out (digital); driven procedurally
 );
-    wire en;
-    reg  clk;
+    // Non-ANSI port style: bare names above, direction + net/var type here once.
+    // A directioned ANSI header PLUS a body `wire`/`reg` for the same port
+    // re-declares it and Symphony rejects it (pitfalls/ports.md). `clk` is a
+    // reg because it is driven procedurally by the `always` block below.
+    input  wire en;
+    output reg  clk;
 
     // Derived timing, computed once at elaboration (not per event). Already in
     // `timescale units (ns) since `tperiod` is -- fed straight to `#`, no scale.
