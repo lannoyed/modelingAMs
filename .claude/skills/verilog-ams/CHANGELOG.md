@@ -3,6 +3,19 @@
 Each accepted SKILL-UPDATE lands here, newest first.
 Format: `## YYYY-MM-DD — [ADD/REVISE] target — summary`
 
+## 2026-07-06 — ADD ports.md, REVISE SKILL.md — `wire` port declaration style
+New pitfall from a `generic_sr_nonoverlap` non-overlap clock generator: an ANSI
+port header (`input clk, output phi1, output phi2`) plus a body `wire clk,
+phi1, phi2;` fails Symphony with "Symbol phi2 is already defined and cannot be
+redefined as net" — the ANSI header already implicitly declares each port as a
+`wire`, so the body `wire ...;` is a duplicate net declaration. Fix: declare
+each port's direction + net type in exactly one place — either all-in-header
+(`input wire clk`, the `generic_switch` `ctrl` form) or non-ANSI style (bare
+names in `( ... )`, `input wire clk;` in the body) when the body needs the net.
+Distinct from attaching a *discipline* in the body (`electrical p, n;`), which
+is fine. Orthogonal to the `#( ... )` parameter-header convention in
+`parameters.md`. See `pitfalls/ports.md`.
+
 ## 2026-07-03 (final) — REVISE parameters.md, generic_switch.vams — guard block is plain `initial`, not `analog`
 Symphony accepts exactly one `analog` block per module (in tension with
 VAMS-2023 §6.2, which permits multiple — another tool restriction, not a spec

@@ -50,6 +50,9 @@ Each = strategy notes + vetted module skeleton + stimulus-plan notes.
 - `parameters.md`   — ANSI-style parameter headers, `localparam` for derived
   constants, the `<MODULE_NAME>_PARAM.vams` convention, and why `from`/
   `exclude` belongs in a runtime guard, not the ANSI header, on Symphony
+- `ports.md`        — port/net declaration style: never split a `wire` port's
+  direction (ANSI header) from a `wire` net redeclaration (body) — "Symbol
+  already defined"; use non-ANSI port style when the body needs the net
 
 ## SKILL-UPDATE protocol (the self-upgrade loop)
 End every model with exactly one line:
