@@ -8,8 +8,9 @@ First purely-digital blocks (`generic_clkgen`, `generic_sr_nonoverlap`): generat
 clock/phases in the event-driven digital kernel (one analog breakpoint per edge, not
 an analog source Newton must integrate), consumer owns the edge via `transition()`.
 Repo-wide `` `timescale 1ns / 1ps`` added as a CLAUDE.md Symphony ground rule — a `#`
-delay is in ns, so convert physical seconds to units (`t/1e-9`) and mind the 1 ps
-floor. `reg`+`always`+`initial clk=0` over a self-referential net oscillator, which
+delay is in ns, so express timing parameters directly in ns (period/dead-time), fed
+straight to `#`; no seconds/Hz parameter or `TUNIT`/`1e-9` scale constant (the unit
+lives on the `timescale line). Mind the 1 ps floor. `reg`+`always`+`initial clk=0` over a self-referential net oscillator, which
 latches at `x` (a net can't be seeded).
 
 ## 2026-07-03 (final) — REVISE parameters.md, generic_switch.vams — guard block is plain `initial`, not `analog`

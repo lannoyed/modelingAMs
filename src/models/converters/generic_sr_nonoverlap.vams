@@ -32,8 +32,8 @@
 // transition() (e.g. inside generic_switch), so this module does NOT shape
 // edges -- doing so would double-smooth. The module uses the repo-wide
 // `timescale 1ns / 1ps (CLAUDE.md ground rules), so a `#` delay is a count of
-// NANOSECONDS: `tnov` stays a physical seconds parameter and is converted to
-// time units by dividing by the 1 ns unit (localparam TUNIT below). Dead times
+// NANOSECONDS and `tnov` is given DIRECTLY in that unit (ns) -- no seconds<->
+// unit conversion or scale constant, the mainstream RTL convention. Dead times
 // below the 1 ps precision round toward zero -- the floor on usable `tnov`.
 //
 // The `#(tnov)` on each continuous assign is an INERTIAL delay: it also
@@ -57,7 +57,7 @@
 `include "constants.vams"
 
 module generic_sr_nonoverlap #(
-    parameter real tnov = 1e-9     // non-overlap dead time [s]; must be > 0
+    parameter real tnov = 1.0      // non-overlap dead time [ns] (== `timescale unit); must be > 0
 ) (
     input  clk,                    // reference clock (digital wire)
     output phi1,                   // phase 1: high while clk is low
@@ -65,11 +65,6 @@ module generic_sr_nonoverlap #(
 );
     wire clk, phi1, phi2;
     wire clk_b;
-
-    // `#` delays run in `timescale units (1 ns), so convert the physical
-    // seconds `tnov` to time units by dividing by the 1 ns unit -- see header.
-    localparam real TUNIT   = 1e-9;          // `timescale unit [s]
-    localparam real tnov_tu = tnov / TUNIT;  // dead time [1ns units]
 
     // Parameter guard: plain `initial`, no analog block in this module at all.
     initial begin
@@ -81,6 +76,7 @@ module generic_sr_nonoverlap #(
 
     // Cross-coupled NOR SR latch. The tnov feedback delay sets the dead time:
     // a phase asserts only after the other has de-asserted and propagated.
-    assign #(tnov_tu) phi1 = ~(clk   | phi2);
-    assign #(tnov_tu) phi2 = ~(clk_b | phi1);
+    // `tnov` is already in `timescale units (ns), fed straight to `#`.
+    assign #(tnov) phi1 = ~(clk   | phi2);
+    assign #(tnov) phi2 = ~(clk_b | phi1);
 endmodule

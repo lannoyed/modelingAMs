@@ -65,10 +65,11 @@ docs/               Per-model strategy notes
 - **Timescale:** every module begins with `` `timescale 1ns / 1ps`` — the single
   repo-wide time unit / precision. Change it only if a model genuinely cannot be
   expressed at this unit/precision, and say why in the header. Consequence for any
-  module that uses `#` delays (digital clocks, gates): a delay is in **nanoseconds**,
-  so a physical delay of `T` seconds is written `` `#(T/1e-9)` `` (scale by the 1 ns
-  unit; keep the user-facing parameter in seconds/Hz and convert with a `localparam`).
-  Anything below the 1 ps precision rounds to zero.
+  module that uses `#` delays (digital clocks, gates): a delay is in **nanoseconds**.
+  Express digital timing parameters **directly in that unit** (a period/dead-time in
+  ns, fed straight to `#`) rather than carrying a seconds/Hz parameter and a scale
+  constant — the unit lives on the `` `timescale`` line, not in the code (mainstream
+  RTL convention). Anything below the 1 ps precision rounds to zero.
 - **Time:** use `$abstime`, never `$realtime`, inside `analog` blocks.
 - **Solver:** smooth every discontinuity — `transition()`, `slew()`, `laplace_*`, and
   `$discontinuity` where a hard switch is unavoidable. Prefer a smooth blend over a

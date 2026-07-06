@@ -13,10 +13,10 @@ corners, and what each is meant to expose.
 ## Core sequences
 
 1. **Steady enable, measure period/duty** — hold `en = 1` and let the clock
-   free-run for many cycles. Exposes: that the period equals `1/freq` and the
-   high-time equals `duty/freq` to within the `` `timescale`` precision (1 ps).
-   Confirms the derived `thigh`/`tlow` split and that edges land on exact,
-   drift-free times (period is constant cycle-to-cycle, not creeping).
+   free-run for many cycles. Exposes: that the period equals `tperiod` (ns) and
+   the high-time equals `duty*tperiod` to within the `` `timescale`` precision
+   (1 ps). Confirms the derived `thigh`/`tlow` split and that edges land on
+   exact, drift-free times (period is constant cycle-to-cycle, not creeping).
 
 2. **Enable gating, both edges** — start with `en = 0`, assert `en = 1` for a
    burst of cycles, then de-assert. Exposes: the clock parks at a clean `0`
@@ -36,26 +36,27 @@ corners, and what each is meant to expose.
    this model contributes nothing analog, so the analog solver only sees a
    breakpoint per edge (the whole point of generating the clock digitally).
 
-5. **Bad-parameter override** — instantiate with `freq <= 0`, or `duty` at `0`,
-   `1`, or outside `(0:1)`, one at a time. Exposes: the `initial` guard's
+5. **Bad-parameter override** — instantiate with `tperiod <= 0`, or `duty` at
+   `0`, `1`, or outside `(0:1)`, one at a time. Exposes: the `initial` guard's
    `$error` fires at `t = 0` with the offending value and instance path (`%m`)
-   and halts the run, rather than dividing by zero in `thigh`/`tlow` or
-   emitting a degenerate clock.
+   and halts the run, rather than emitting a zero/negative-width or degenerate
+   clock.
 
 ## Corners / parameter settings to exercise
 
 | Parameter | Corner values | Why |
 |---|---|---|
-| `freq` | the parent circuit's real switching frequency, plus ~decade above/below | period should track `1/freq`; the high end checks that the 1 ps precision floor is still a small fraction of the half period (~0.1% at 1 GHz), the low end that the event count stays sane |
+| `tperiod` | the parent circuit's real switching period (ns), plus ~decade above/below | period should track `tperiod`; the short end checks that the 1 ps precision floor is still a small fraction of the half period (~0.1% for a 1 ns period), the long end that the event count stays sane |
 | `duty` | 0.5, and a deliberately asymmetric value (e.g. 0.3) | confirms `thigh`/`tlow` split independently and that a non-50% clock is available for a downstream generator that needs it |
-| `freq` near the precision floor | a clock whose half period approaches ~1 ps | exposes the fixed `` `timescale 1ns/1ps`` (repo-wide) precision floor on edge placement — the point below which this generator can no longer resolve the intended timing |
+| `tperiod` near the precision floor | a period whose half approaches ~1 ps (i.e. `tperiod` ~ 0.002 ns) | exposes the fixed `` `timescale 1ns/1ps`` (repo-wide) precision floor on edge placement — the point below which this generator can no longer resolve the intended timing |
 | `en` | clean 0/1 burst, and `x` | sequences 2 and 3 |
 
 ## Translation notes (plain-English, next to the relevant sequence)
 
-- **`freq`/`duty` (sequence 1):** "how fast it ticks and how long it stays high
-  each tick." Both are exact by construction here — a behavioural timing source,
-  so no jitter and no phase noise; add those only if the study needs them.
+- **`tperiod`/`duty` (sequence 1):** "how long each tick is (in ns) and how long
+  it stays high each tick." Both are exact by construction here — a behavioural
+  timing source, so no jitter and no phase noise; add those only if the study
+  needs them.
 - **digital generation (sequence 4):** "the clock lives in the digital
   simulator, so the analog engine only stops at each edge instead of grinding
   through a fast oscillating node." This is the reason the model has no analog
