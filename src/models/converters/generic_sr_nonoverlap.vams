@@ -31,10 +31,10 @@
 // edge Newton needs at the analog boundary is applied by the CONSUMER via
 // transition() (e.g. inside generic_switch), so this module does NOT shape
 // edges -- doing so would double-smooth. The module uses the repo-wide
-// `timescale 1ns / 10ps (CLAUDE.md ground rules), so a `#` delay is a count of
+// `timescale 1ns / 1ps (CLAUDE.md ground rules), so a `#` delay is a count of
 // NANOSECONDS: `tnov` stays a physical seconds parameter and is converted to
 // time units by dividing by the 1 ns unit (localparam TUNIT below). Dead times
-// below the 10 ps precision round toward zero -- the floor on usable `tnov`.
+// below the 1 ps precision round toward zero -- the floor on usable `tnov`.
 //
 // The `#(tnov)` on each continuous assign is an INERTIAL delay: it also
 // filters any input pulse shorter than tnov. That is correct for a dead-time
@@ -52,7 +52,7 @@
 // rise/fall), ideal gates (no per-gate propagation asymmetry), no metastability
 // modelling. A behavioural non-overlap generator, not a gate-level netlist.
 
-`timescale 1ns / 10ps
+`timescale 1ns / 1ps
 `include "disciplines.vams"
 `include "constants.vams"
 

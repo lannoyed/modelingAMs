@@ -50,7 +50,7 @@ corners, and what each is meant to expose.
 
 | Parameter | Corner values | Why |
 |---|---|---|
-| `tnov` | the repo `` `timescale 1ns/10ps`` precision floor (~10 ps), a realistic value (~1 ns), and up toward a half period | dead-time width should scale with `tnov`; below ~10 ps the delay rounds toward zero (no dead time — a real floor from the fixed timescale), the large corner exposes pulse swallowing (sequence 3) |
+| `tnov` | the repo `` `timescale 1ns/1ps`` precision floor (~1 ps), a realistic value (~1 ns), and up toward a half period | dead-time width should scale with `tnov`; below ~1 ps the delay rounds toward zero (no dead time — a real floor from the fixed timescale), the large corner exposes pulse swallowing (sequence 3) |
 | `clk` freq | matched so `tnov` is a small fraction of the half period, and one where it is not | ties the `tnov` corner to a concrete clock; confirms non-overlap is a fixed time, not a fixed fraction of the period |
 | `clk` | clean square wave, and `x` at startup | sequences 1 and 4 |
 

@@ -7,8 +7,8 @@ Format: `## YYYY-MM-DD — [ADD/REVISE] target — summary`
 First purely-digital blocks (`generic_clkgen`, `generic_sr_nonoverlap`): generate
 clock/phases in the event-driven digital kernel (one analog breakpoint per edge, not
 an analog source Newton must integrate), consumer owns the edge via `transition()`.
-Repo-wide `` `timescale 1ns / 10ps`` added as a CLAUDE.md Symphony ground rule — a `#`
-delay is in ns, so convert physical seconds to units (`t/1e-9`) and mind the 10 ps
+Repo-wide `` `timescale 1ns / 1ps`` added as a CLAUDE.md Symphony ground rule — a `#`
+delay is in ns, so convert physical seconds to units (`t/1e-9`) and mind the 1 ps
 floor. `reg`+`always`+`initial clk=0` over a self-referential net oscillator, which
 latches at `x` (a net can't be seeded).
 

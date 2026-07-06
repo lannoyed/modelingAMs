@@ -62,13 +62,13 @@ docs/               Per-model strategy notes
 ---
 
 ## Siemens Symphony ground rules
-- **Timescale:** every module begins with `` `timescale 1ns / 10ps`` — the single
+- **Timescale:** every module begins with `` `timescale 1ns / 1ps`` — the single
   repo-wide time unit / precision. Change it only if a model genuinely cannot be
   expressed at this unit/precision, and say why in the header. Consequence for any
   module that uses `#` delays (digital clocks, gates): a delay is in **nanoseconds**,
   so a physical delay of `T` seconds is written `` `#(T/1e-9)` `` (scale by the 1 ns
   unit; keep the user-facing parameter in seconds/Hz and convert with a `localparam`).
-  Anything below the 10 ps precision rounds to zero.
+  Anything below the 1 ps precision rounds to zero.
 - **Time:** use `$abstime`, never `$realtime`, inside `analog` blocks.
 - **Solver:** smooth every discontinuity — `transition()`, `slew()`, `laplace_*`, and
   `$discontinuity` where a hard switch is unavoidable. Prefer a smooth blend over a

@@ -33,7 +33,7 @@ on/off state is driven by a digital net; only fall back to a hand-declared
 connect module for a boundary need `transition()` at the point of use can't
 cover (see `pitfalls/connect_rules.md`).
 
-## 2026-07-06 — ADD — digital `#` delays: repo-wide `timescale 1ns/10ps, convert seconds to units
+## 2026-07-06 — ADD — digital `#` delays: repo-wide `timescale 1ns/1ps, convert seconds to units
 First purely-digital blocks in the repo (`generic_clkgen`, `generic_sr_nonoverlap`)
 generate a clock/phases in the event-driven digital kernel — the correct AMS
 choice: an analog square-wave source would force Newton to integrate a stiff,
@@ -43,12 +43,12 @@ only one breakpoint per edge. Two rules that come with that:
   the output is a raw digital `wire`/`reg`. The finite edge Newton needs is applied
   by the *consumer* via `transition()` at its own boundary — never pre-shape the
   edge in the clock module (double-smoothing).
-- **One repo-wide `` `timescale 1ns / 10ps`` (CLAUDE.md ground rule).** A `#` delay
+- **One repo-wide `` `timescale 1ns / 1ps`` (CLAUDE.md ground rule).** A `#` delay
   is therefore in **nanoseconds**, not seconds. Keep the user-facing parameter
   physical (freq in Hz, dead time in s) and convert once at elaboration:
   `` localparam real d_units = t_seconds / 1e-9; `` then `#(d_units)`. Anything below
-  the 10 ps precision rounds to zero (the floor on `tnov` / on clock resolution —
-  ~1% of the period at 1 GHz). A self-referential net oscillator
+  the 1 ps precision rounds to zero (the floor on `tnov` / on clock resolution —
+  ~0.1% of the period at 1 GHz). A self-referential net oscillator
   (`assign #d clk = ~clk & en;`) is rejected: a net can't be seeded, so `clk`
   latches at `x` forever when `en` is high at t=0 (`~x&1 = x`). Use `reg` + `always`
   with `initial clk = 0` so a free-running clock actually starts.
