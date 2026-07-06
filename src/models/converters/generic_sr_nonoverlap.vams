@@ -1,0 +1,79 @@
+// generic_sr_nonoverlap.vams -- SR-latch two-phase non-overlapping clock
+// generator (clk -> phi1, phi2).
+//
+// Why: SC converters, correlated-double-sampling front ends, and any
+// switched-capacitor stage need two clock phases that are NEVER both high at
+// once -- the "break-before-make" dead time keeps flying-cap charge paths from
+// shorting (shoot-through). This is the reusable generator for exactly the
+// phi1/phi2 that sc_tripler_top requires but deliberately does not generate
+// itself. Composed downstream of generic_clkgen: en -> clk -> {phi1, phi2}.
+//
+// Topology (the "SR latch" you named): a cross-coupled NOR SR latch. Each
+// phase is NOR(clk-or-its-inverse, the OTHER phase), so a phase can only
+// assert once the other has de-asserted. The `#(tnov)` delay in each feedback
+// path is what turns that mutual exclusion into a timed dead band:
+//
+//   clk_b = ~clk
+//   phi1  = NOR(clk,   phi2)   delayed by tnov
+//   phi2  = NOR(clk_b, phi1)   delayed by tnov
+//
+//   clk high -> phi1 = ~(1|phi2) = 0 (forced),  phi2 = ~(0|0) = 1  => phi2 on
+//   clk low  -> phi2 = ~(1|phi1) = 0 (forced),  phi1 = ~(0|0) = 1  => phi1 on
+//
+// On each clk edge the rising phase must wait for the falling phase to reach 0
+// and propagate through tnov before it can go high -- so both phases are low
+// for ~tnov (the non-overlap dead time) and the forbidden "both high" state is
+// unreachable in steady state by construction.
+//
+// THE AMS DECISION: this is pure digital logic in the event-driven kernel --
+// no analog contribution, so the analog solver only sees a breakpoint per
+// edge, never a node to integrate. Outputs are raw digital `wire`s: the finite
+// edge Newton needs at the analog boundary is applied by the CONSUMER via
+// transition() (e.g. inside generic_switch), so this module does NOT shape
+// edges -- doing so would double-smooth. `timescale 1s / 1fs makes `tnov` a
+// literal delay in SECONDS, coincident with the analog `$abstime`; see
+// generic_clkgen.vams for the full rationale on the 1s time unit.
+//
+// The `#(tnov)` on each continuous assign is an INERTIAL delay: it also
+// filters any input pulse shorter than tnov. That is correct for a dead-time
+// element but means tnov must stay well below the clock's high/low time --
+// tnov >= a half period would swallow the clock entirely (guarded against as a
+// gross error below; the "comfortably smaller" margin is a stimulus concern,
+// see stimuli/generic_sr_nonoverlap.md).
+//
+// Range guards: reusable sub-module (instantiated with per-instance overrides),
+// so bare ANSI header (no `from`/`exclude`) for reliable Symphony override
+// binding, with a runtime `$error` guard in a plain `initial` block -- same
+// convention as generic_switch / generic_clkgen (see pitfalls/parameters.md).
+//
+// Limitations: symmetric dead time on both edges (one `tnov`, not separate
+// rise/fall), ideal gates (no per-gate propagation asymmetry), no metastability
+// modelling. A behavioural non-overlap generator, not a gate-level netlist.
+
+`timescale 1s / 1fs
+`include "disciplines.vams"
+`include "constants.vams"
+
+module generic_sr_nonoverlap #(
+    parameter real tnov = 1e-9     // non-overlap dead time [s]; must be > 0
+) (
+    input  clk,                    // reference clock (digital wire)
+    output phi1,                   // phase 1: high while clk is low
+    output phi2                    // phase 2: high while clk is high
+);
+    wire clk, phi1, phi2;
+    wire clk_b;
+
+    // Parameter guard: plain `initial`, no analog block in this module at all.
+    initial begin
+        if (tnov <= 0.0)
+            $error("generic_sr_nonoverlap %m: tnov=%g out of range (0:inf)", tnov);
+    end
+
+    assign clk_b = ~clk;
+
+    // Cross-coupled NOR SR latch. The tnov feedback delay sets the dead time:
+    // a phase asserts only after the other has de-asserted and propagated.
+    assign #(tnov) phi1 = ~(clk   | phi2);
+    assign #(tnov) phi2 = ~(clk_b | phi1);
+endmodule

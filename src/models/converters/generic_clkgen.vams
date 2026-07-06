@@ -1,0 +1,97 @@
+// generic_clkgen.vams -- gated digital clock source (enable -> periodic clk).
+//
+// Why: every mixed-signal block driven by a clock (SC converter, ADC sampler,
+// PLL reference, non-overlap generator) needs the same primitive: a clean,
+// enable-gated square wave on a digital net. One reusable source replaces a
+// per-testbench ad-hoc clock and, composed with generic_sr_nonoverlap, gives
+// sc_tripler_top the externally-supplied phi1/phi2 it deliberately does not
+// generate itself (separation of concerns: the converter carries no drive
+// source, so the drive source is its own vetted model).
+//
+// THE AMS DECISION -- why this clock is generated in the digital domain:
+//   The clock is produced entirely in the event-driven digital kernel (an
+//   `always` block with `#` delays), NOT as an analog contribution. Modelling
+//   a clock as an analog source (V(clk) <+ square wave) would force Newton to
+//   integrate a stiff, fast-switching continuous node every cycle -- slow and
+//   convergence-hostile. Keeping it digital means the analog solver only has
+//   to place a breakpoint at each edge; it never integrates the oscillator.
+//   This is the single biggest efficiency/convergence choice for an AMS clock.
+//
+// Why `timescale 1s / 1fs specifically:
+//   With a 1-second time unit, every `#` delay below is expressed in literal
+//   SECONDS, so digital time coincides with the analog kernel's `$abstime` --
+//   no unit-mismatch between the freq-derived real delays and simulation time.
+//   1fs precision places each edge to within 0.5 fs (< 1 part in 5e14 at
+//   1 MHz); because `#(thigh)` waits the same rounded delta every cycle the
+//   clock is perfectly periodic with only a fixed, negligible frequency
+//   offset -- not accumulating drift, so no per-edge `$abstime` anchoring is
+//   needed. Relax to 1ps if a very long run makes the 1fs event grid costly;
+//   accuracy is unaffected for <= GHz clocks.
+//
+// Edge shaping is NOT done here: `clk` is a raw digital `wire`. The finite
+// rise/fall Newton needs at the analog boundary is applied by the CONSUMER via
+// transition() (repo convention, e.g. inside generic_switch), so shaping the
+// edge here would double-smooth. This module owns period/duty/gating only.
+//
+// Enable semantics: `en === 1` gates the clock on; anything else (0, x, z)
+// parks `clk` at a defined 0 -- same safe "not a clean 1 => off" failure mode
+// as generic_switch, so an unresolved digital side idles rather than glitches.
+// Disable takes effect at the end of the current period (the `#` delays are
+// blocking); the idle state is always a clean low, never a truncated pulse.
+//
+// Range guards: reusable sub-module (instantiated with per-instance overrides
+// by a clock-tree top block), so the ANSI header stays bare -- no `from`/
+// `exclude` -- to keep overrides binding reliably at Symphony elaboration (see
+// pitfalls/parameters.md, `_top`-vs-sub-module convention). Ranges are checked
+// at runtime in a plain `initial` block (Verilog allows any number of them),
+// kept separate from the timing `always`: `$error` at t=0 on an out-of-range
+// override halts the run with the offending value and instance path.
+//
+// Limitations: ideal edges (zero rise/fall in the digital domain -- the
+// consumer shapes them), no jitter, no phase noise, no startup ramp. A
+// behavioural timing source, not a physical oscillator model.
+
+`timescale 1s / 1fs
+`include "disciplines.vams"
+`include "constants.vams"
+
+module generic_clkgen #(
+    parameter real freq = 1e6,     // clock frequency [Hz]; must be > 0
+    parameter real duty = 0.5      // high-time fraction [-]; must be in (0:1)
+) (
+    input  en,                     // enable (digital wire): 1 = run, else park low
+    output clk                     // clock out (digital); driven procedurally
+);
+    wire en;
+    reg  clk;
+
+    // Derived timing, computed once at elaboration (not per event). In seconds
+    // because of `timescale 1s above, so they feed `#` delays directly.
+    localparam real thigh = duty / freq;           // high phase [s]
+    localparam real tlow  = (1.0 - duty) / freq;   // low  phase [s]
+
+    // Parameter guard: plain `initial`, separate from the timing `always`.
+    initial begin
+        if (freq <= 0.0)
+            $error("generic_clkgen %m: freq=%g out of range (0:inf)", freq);
+        if (duty <= 0.0 || duty >= 1.0)
+            $error("generic_clkgen %m: duty=%g out of range (0:1)", duty);
+    end
+
+    initial clk = 1'b0;            // defined idle state before the first edge
+
+    // Free-running while enabled; parks low and waits on any `en` change
+    // otherwise. `en === 1` (case equality) means x/z idle low, not run.
+    always begin
+        if (en === 1'b1) begin
+            clk = 1'b1;
+            #(thigh);
+            clk = 1'b0;
+            #(tlow);
+        end
+        else begin
+            clk = 1'b0;           // clean idle low, never a truncated pulse
+            @(en);                // re-evaluate on the next enable change
+        end
+    end
+endmodule
