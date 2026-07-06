@@ -1,4 +1,5 @@
-// generic_latch.vams — level-sensitive SR (set/reset) latch, all-digital.
+// generic_latch.vams — level-sensitive SR (set/reset) latch, all-digital,
+// behavioral. Defaults tuned to match a cross-coupled 2-NOR implementation.
 //
 // Why: an SR latch is the canonical one-bit memory element and a composition
 // primitive -- two of these cross-coupled make a gated D-latch / flip-flop, or
@@ -8,35 +9,55 @@
 // node -- this is a digital glue primitive in a mixed-signal library, not a
 // conservative-electrical model. When a downstream *analog* block consumes `q`
 // or `qn`, it smooths that digital net at its own point of use with
-// transition(), relying on Symphony's automatic D2A connect module (the same
-// contract generic_switch uses for its `ctrl` input) -- this latch does not own
-// that boundary, so it declares no connect module (see connect_rules.md).
+// transition(), relying on Symphony's automatic A2D/D2A connect module (the
+// same contract generic_switch uses for its `ctrl` input) -- this latch does
+// not own that boundary, so it declares no connect module (see
+// pitfalls/connect_rules.md).
 //
-// Behavior (asynchronous, level-sensitive -- an SR latch is not clocked):
-//     S=1, R=0 -> set   (Q=1, QN=0)
-//     S=0, R=1 -> reset (Q=0, QN=1)
-//     S=0, R=0 -> hold  (Q/QN keep last state)  <- the memory
-//     S=1, R=1 -> illegal input; resolved by the `setdom` Strategy below
+// Behavioral, not structural. This is NOT two cross-coupled NOR gates -- a
+// structural pair is a zero-delay combinational loop that must invent a gate
+// delay `tpd` just to be simulable, and then leaks gate-delay races and a
+// metastable S=R=1->0,0 deassertion window into every block that uses a latch.
+// A behavioral model with explicit state is deterministic, delay-free, and
+// convergence-safe -- the right altitude for a reusable primitive. Reach for a
+// structural gate-level model only when that race/metastability is itself what
+// you're studying (synchronizer, arbiter, metastability hardening).
 //
-// Design pattern -- Strategy on the illegal input S=R=1. A physical
-// cross-coupled NOR/NAND latch drives a degenerate output here; a behavioral
-// latch is more useful with a *selectable* policy, so `setdom` swaps it without
-// branching the output logic:
-//     setdom =  1  set-dominant   : S=R=1 -> Q=1  (default)
-//     setdom =  0  reset-dominant  : S=R=1 -> Q=0
-//     setdom = -1  hold            : S=R=1 -> keep last state
-// QN is always the exact complement of Q; this model does NOT reproduce the
-// "both outputs equal" degeneracy of a real gate pair (that's a different,
-// non-generic model).
+// Matching the 2-NOR structure. Although behavioral, the DEFAULTS reproduce
+// what a cross-coupled NOR pair (QN=NOR(S,Q), Q=NOR(R,QN)) actually does:
+//   - Inputs are ACTIVE-HIGH. A NOR latch asserts on a logic 1, so `=== 1`
+//     case-equality is the set/reset test. (A NAND latch would be the
+//     active-low S-bar/R-bar dual -- not this default.)
+//   - The illegal input S=R=1 drives BOTH outputs LOW (Q=QN=0), because
+//     NOR(1, .) = 0 on both gates. This is why `qn` is NOT hardwired to `~q`
+//     here: in that one state the outputs are non-complementary, and a
+//     faithful model has to be able to represent it. `sr11 = 2` selects it.
 //
-// Power-up: a real SR latch powers up indeterminate; a simulator needs a
-// defined start, so `qinit` sets the t=0 state explicitly rather than leaving
-// Q at x and propagating unknowns through whatever this feeds.
+// Design pattern -- Strategy on the illegal input S=R=1, via `sr11`:
+//     sr11 = 0  reset-dominant : Q=0, QN=1
+//     sr11 = 1  set-dominant    : Q=1, QN=0
+//     sr11 = 2  both-low        : Q=0, QN=0   <- cross-coupled NOR   (default)
+//     sr11 = 3  both-high       : Q=1, QN=1   <- cross-coupled NAND
+//     sr11 = 4  hold            : keep last legal state
+// In every LEGAL state (set, reset, hold) `qn` is the exact complement of `q`;
+// only the illegal state can break that, and only for sr11 in {2,3}.
 //
-// x/z handling: inputs are compared with `=== 1` case-equality, so an
-// unresolved `s` or `r` (x/z behind a connect boundary) reads as "not
-// asserted" and holds state -- it never spuriously sets/resets. The failure
-// mode is "remember", the safest one for a memory element.
+// Illegal input is always flagged. Regardless of `sr11`, entering S=R=1 emits
+// a `$warning`: the output there is implementation-defined and no correct
+// design should depend on it -- the parameter picks a defined value, it does
+// not make the input legal. On leaving S=R=1 back to S=R=0, the outputs hold
+// their forced value (e.g. both-low for NOR) as an "undefined until re-driven"
+// state; a real NOR latch resolves that release by a gate-delay race this
+// behavioral model does not attempt to reproduce (see Limitations).
+//
+// Power-up: a real NOR SR latch powers up indeterminate; a simulator needs a
+// defined start, so `qinit` pins the t=0 state (0 -> reset / Q low, the safe
+// default) rather than propagating `x` through whatever this feeds.
+//
+// x/z handling: inputs use `=== 1` case-equality, so an unresolved `s` or `r`
+// (x/z behind a connect boundary) reads as "not asserted" and holds state --
+// it never spuriously sets/resets. The failure mode is "remember", the safest
+// one for a memory element.
 //
 // Range guards: sub-module (meant to be instantiated with per-instance
 // overrides, e.g. by a flip-flop model), so the ANSI header stays bare -- no
@@ -45,47 +66,54 @@
 // The integer-choice parameters are validated at runtime in a plain `initial`
 // block; `$error` on a bad override halts with a clear diagnostic.
 //
-// Limitations: ideal, zero-delay behavioral macromodel. No propagation delay
-// (a composing model adds delay elements if it needs them), no setup/hold or
-// metastability on near-simultaneous S/R edges, no input thresholds/hysteresis
-// (the D2A/A2D connect module owns those at any analog boundary).
+// Limitations: ideal, zero-delay behavioral macromodel. No propagation delay,
+// no setup/hold or metastability, and the S=R=1->0,0 deassertion race is NOT
+// modeled (outputs hold their illegal-state value instead of racing to a
+// resolved level). Input thresholds/hysteresis are owned by the A2D connect
+// module at any analog boundary, not here.
 
 `include "disciplines.vams"
 
 module generic_latch #(
-    parameter integer setdom = 1,   // S=R=1 policy: 1 set-dom, 0 reset-dom, -1 hold
-    parameter integer qinit  = 0    // power-up state: 0 -> Q low, else Q high
+    parameter integer sr11  = 2,   // illegal S=R=1 policy (see table); 2 = both-low (NOR)
+    parameter integer qinit = 0    // power-up state: 0 -> reset (Q low), else set (Q high)
 ) (
     input  wire s, r,
     output wire q, qn
 );
 
-  reg qstate;                        // the held bit: 1 -> Q high/QN low, 0 -> Q low/QN high
+  // Two independent output regs, not `qn = ~q`: the NOR/NAND illegal states
+  // (sr11 2/3) are non-complementary, so both outputs must be first-class.
+  reg qout, qnout;
 
-  // Parameter guard: reject an illegal Strategy selection up front, and set the
-  // defined power-up state. Plain `initial` -- no analog block exists here, but
-  // this stays a pure digital construct regardless.
+  // Parameter guard + defined power-up. Plain `initial` (no analog block here).
   initial begin
-    if (setdom != 1 && setdom != 0 && setdom != -1)
-      $error("generic_latch %m: setdom=%0d not in {1,0,-1}", setdom);
-    qstate = (qinit != 0) ? 1'b1 : 1'b0;   // defined start; real latch is indeterminate
+    if (sr11 < 0 || sr11 > 4)
+      $error("generic_latch %m: sr11=%0d not in {0,1,2,3,4}", sr11);
+    if (qinit != 0) begin qout = 1'b1; qnout = 1'b0; end   // set-state start
+    else            begin qout = 1'b0; qnout = 1'b1; end   // reset-state start (default)
   end
 
   // Level-sensitive bistable. `=== 1` case-equality so x/z on an input holds
-  // state rather than matching a set/reset. On S=R=1 apply the Strategy-selected
-  // `setdom` policy; otherwise S xor R sets/resets and S=R=0 holds by writing
-  // nothing.
+  // state rather than matching a set/reset. S=R=1 is illegal: warn every time
+  // and drive the `sr11`-selected value. S xor R sets/resets; S=R=0 holds by
+  // writing nothing.
   always @(s or r) begin
     if ((s === 1) && (r === 1)) begin
-      if      (setdom ==  1) qstate = 1'b1;   // set-dominant
-      else if (setdom ==  0) qstate = 1'b0;   // reset-dominant
-      // setdom == -1: hold -- leave qstate unchanged
+      $warning("generic_latch %m: illegal input S=R=1; output forced by sr11=%0d, not a reliable latch state", sr11);
+      case (sr11)
+        0: begin qout = 1'b0; qnout = 1'b1; end   // reset-dominant
+        1: begin qout = 1'b1; qnout = 1'b0; end   // set-dominant
+        2: begin qout = 1'b0; qnout = 1'b0; end   // both-low  (cross-coupled NOR)
+        3: begin qout = 1'b1; qnout = 1'b1; end   // both-high (cross-coupled NAND)
+        4: ;                                      // hold -- leave outputs unchanged
+      endcase
     end
-    else if (s === 1) qstate = 1'b1;          // set
-    else if (r === 1) qstate = 1'b0;          // reset
+    else if (s === 1) begin qout = 1'b1; qnout = 1'b0; end   // set
+    else if (r === 1) begin qout = 1'b0; qnout = 1'b1; end   // reset
     // else S=R=0: hold
   end
 
-  assign q  =  qstate;               // QN is always the exact complement of Q
-  assign qn = ~qstate;
+  assign q  = qout;
+  assign qn = qnout;
 endmodule
