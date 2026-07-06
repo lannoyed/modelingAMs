@@ -3,6 +3,21 @@
 Each accepted SKILL-UPDATE lands here, newest first.
 Format: `## YYYY-MM-DD — [ADD/REVISE] target — summary`
 
+## 2026-07-06 — ADD ports.md; REVISE generic_sr_nonoverlap.vams, generic_clkgen.vams, SKILL.md — ANSI-header vs. body net redeclaration
+Real Symphony elaboration of `generic_sr_nonoverlap` failed with
+`[Error] Symbol phi2 is already defined and cannot be redefined as net`: an
+ANSI directioned port header (`input clk, output phi1, output phi2`) plus a
+body `wire clk, phi1, phi2;` re-declares each port's implicit net — a duplicate
+net declaration (IEEE 1800/1364 §23.2.2.1, ordinary Verilog, not a Symphony
+quirk). Same class on `generic_clkgen` (`input en; ... wire en;` and
+`output clk; ... reg clk;`). Both fixed to non-ANSI style: bare port names in
+the header, `input wire`/`output reg` declared once in the body. Key
+distinction captured in the new `pitfalls/ports.md`: a body `wire`/`reg` for an
+ANSI directioned port is an illegal redeclaration, but a body discipline line
+(`electrical p, n;`) is the legal, required exception — which is why the
+electrical models (`generic_switch`, `sc_tripler_top`) were never affected.
+`generic_latch` already used a full-ANSI net-typed header and needed no change.
+
 ## 2026-07-06 — ADD convergence.md (+ CLAUDE.md ground rule) — digital clocks & repo-wide timescale
 First purely-digital blocks (`generic_clkgen`, `generic_sr_nonoverlap`): generate
 clock/phases in the event-driven digital kernel (one analog breakpoint per edge, not
