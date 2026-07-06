@@ -1,0 +1,90 @@
+// sc_doubler_top.vams  single-flying-capacitor switched-capacitor
+// converter, 1:2 step-up (Vout = 2*Vin ideal).
+//
+// Why: the physical netlist, not an algebraic transfer function. R_out (the
+// SSL/FSL output-impedance corner) is never computed as a formula here -- it
+// is an emergent property of this netlist's charge redistribution and switch
+// resistance under a transient fsw/Iload sweep. That keeps the model correct
+// by construction if cap sizes or Ron values change later, instead of
+// requiring a hand-derived constant to be kept in sync with the topology.
+//
+// Out of scope: the output reservoir cap and the load. Both live outside this
+// model (stimulus/testbench side); `vout` here is only the summing node,
+// not a regulated rail.
+//
+// Topology (confirmed netlist):
+//   phi1 (charge):    C1 charges to Vin, referenced to GND.
+//   phi2 (discharge):  C1 is placed in series with Vin: Vin -> C1 -> Vout,
+//                      summing two Vin drops (Vin + Vin = 2*Vin at Vout).
+//   phi1/phi2 must be non-overlapping; overlap is a shoot-through fault, deliberately
+//   left reachable here (see STIMULI plan) since both are driven externally.
+//
+// Switch-stress tiers (voltage each switch/node blocks in phi2, the worst case):
+//   tier 1 (<= Vin):    S1a, S1b   (phi1 switches only ever see Vin)
+//   tier 2 (<= 2*Vin):  S2a, S2b   (C1_top/Vout sit at 2*Vin in phi2)
+//
+// LRM/Symphony features: conservative `electrical` nodes throughout the charge-
+// transfer path; `phi1`/`phi2` are plain digital `wire`s, connected straight
+// into each `generic_switch` instance -- the digital<->analog boundary is
+// resolved inside generic_switch via Symphony's automatic connect modules
+// (see disciplines.vams), not a project-specific connect module. Capacitors
+// are direct `I <+ C*ddt(V)` contributions (a one-line primitive doesn't earn
+// its own sub-module); switches are composed from the reusable
+// `generic_switch`.
+//
+// Design patterns: Strategy on generic_switch's `ron` (0 isolates the SSL
+// asymptote, raising it brings in FSL -- same equation, no branching).
+// Factory-style tier selection: one `ron_tier{1,2}` parameter per stress
+// tier instead of four independent per-switch parameters, mirroring the
+// netlist's own 2-tier structure -- generic_switch itself carries no tier
+// concept (dropped along with the sc_switch -> generic_switch rebrand), so
+// this tiering lives entirely in this module's parameter naming and
+// instantiation choices, not in a passthrough field on the sub-module.
+//
+// Naming/parameter convention ("_top" vs. sub-module, see
+// pitfalls/parameters.md): this is a `_top` block -- the terminal module a
+// testbench instantiates directly, never itself instantiated-with-overrides
+// by anything else in this repo. That means override-binding reliability
+// (the reason generic_switch's own header stays bare) isn't a constraint
+// here, so this module keeps the ANSI-header + <NAME>_PARAM.vams convention
+// with `from (0:inf)` elaboration-time range guards, spliced directly inside
+// `#( ... )` -- the one grammar context (VAMS-2023 module_parameter_port_list)
+// where a comma-chained, semicolon-free run of `parameter_declaration`s is
+// legal. c1 (which this module reads directly in its own `<+`
+// contributions) gets that same elaboration-time check for free from the
+// PARAM file; ron_tier1/2, roff, trise, tfall are pure passthrough
+// overrides into generic_switch, which range-guards them itself at runtime.
+//
+// Limitations: ideal caps (no ESR/ESL), ideal switches (see
+// generic_switch.vams), no internal non-overlap generation -- phi1/phi2 must
+// be supplied correctly dead-timed by the stimulus in the nominal case
+// (separation of concerns: this model contains no drive source, including no
+// clock/phase generator).
+
+`include "disciplines.vams"
+`include "constants.vams"
+
+module sc_doubler_top #(
+`include "sc_doubler_top_PARAM.vams"
+) (
+    inout vin, vout, gnd,
+    input wire phi1, phi2
+);
+  electrical vin, vout, gnd;
+  electrical c1_top, c1_bot;
+
+  // --- phi1 (charge): C1 across Vin -> GND ---
+  generic_switch #(.ron(ron_tier1), .roff(roff), .trise(trise), .tfall(tfall)) u_s1a (.p(c1_top), .n(vin), .ctrl(phi1));
+  generic_switch #(.ron(ron_tier1), .roff(roff), .trise(trise), .tfall(tfall)) u_s1b (.p(c1_bot), .n(gnd), .ctrl(phi1));
+
+  // --- phi2 (discharge): C1 in series with Vin -> Vout ---
+  generic_switch #(.ron(ron_tier2), .roff(roff), .trise(trise), .tfall(tfall)) u_s2a (.p(c1_bot), .n(vin),  .ctrl(phi2));
+  generic_switch #(.ron(ron_tier2), .roff(roff), .trise(trise), .tfall(tfall)) u_s2b (.p(c1_top), .n(vout), .ctrl(phi2));
+
+  analog begin
+    // Flying cap: direct charge-conservation contribution. c1 is
+    // already elaboration-time range-guarded by `from (0:inf)` in
+    // sc_doubler_top_PARAM.vams -- no runtime clamp needed here.
+    I(c1_top, c1_bot) <+ c1 * ddt(V(c1_top, c1_bot));
+  end
+endmodule
