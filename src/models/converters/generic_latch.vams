@@ -1,0 +1,91 @@
+// generic_latch.vams — level-sensitive SR (set/reset) latch, all-digital.
+//
+// Why: an SR latch is the canonical one-bit memory element and a composition
+// primitive -- two of these cross-coupled make a gated D-latch / flip-flop, or
+// one gates an ADC comparator's decision. Every signal here is digital: `s`,
+// `r`, `q`, `qn` are plain nets, and the held bit lives entirely in the event
+// (digital) domain. There is deliberately NO `analog` block and NO `electrical`
+// node -- this is a digital glue primitive in a mixed-signal library, not a
+// conservative-electrical model. When a downstream *analog* block consumes `q`
+// or `qn`, it smooths that digital net at its own point of use with
+// transition(), relying on Symphony's automatic D2A connect module (the same
+// contract generic_switch uses for its `ctrl` input) -- this latch does not own
+// that boundary, so it declares no connect module (see connect_rules.md).
+//
+// Behavior (asynchronous, level-sensitive -- an SR latch is not clocked):
+//     S=1, R=0 -> set   (Q=1, QN=0)
+//     S=0, R=1 -> reset (Q=0, QN=1)
+//     S=0, R=0 -> hold  (Q/QN keep last state)  <- the memory
+//     S=1, R=1 -> illegal input; resolved by the `setdom` Strategy below
+//
+// Design pattern -- Strategy on the illegal input S=R=1. A physical
+// cross-coupled NOR/NAND latch drives a degenerate output here; a behavioral
+// latch is more useful with a *selectable* policy, so `setdom` swaps it without
+// branching the output logic:
+//     setdom =  1  set-dominant   : S=R=1 -> Q=1  (default)
+//     setdom =  0  reset-dominant  : S=R=1 -> Q=0
+//     setdom = -1  hold            : S=R=1 -> keep last state
+// QN is always the exact complement of Q; this model does NOT reproduce the
+// "both outputs equal" degeneracy of a real gate pair (that's a different,
+// non-generic model).
+//
+// Power-up: a real SR latch powers up indeterminate; a simulator needs a
+// defined start, so `qinit` sets the t=0 state explicitly rather than leaving
+// Q at x and propagating unknowns through whatever this feeds.
+//
+// x/z handling: inputs are compared with `=== 1` case-equality, so an
+// unresolved `s` or `r` (x/z behind a connect boundary) reads as "not
+// asserted" and holds state -- it never spuriously sets/resets. The failure
+// mode is "remember", the safest one for a memory element.
+//
+// Range guards: sub-module (meant to be instantiated with per-instance
+// overrides, e.g. by a flip-flop model), so the ANSI header stays bare -- no
+// `from`/`exclude` -- to keep those overrides binding reliably at Symphony
+// elaboration (see pitfalls/parameters.md's `_top`-vs-sub-module convention).
+// The integer-choice parameters are validated at runtime in a plain `initial`
+// block; `$error` on a bad override halts with a clear diagnostic.
+//
+// Limitations: ideal, zero-delay behavioral macromodel. No propagation delay
+// (a composing model adds delay elements if it needs them), no setup/hold or
+// metastability on near-simultaneous S/R edges, no input thresholds/hysteresis
+// (the D2A/A2D connect module owns those at any analog boundary).
+
+`include "disciplines.vams"
+
+module generic_latch #(
+    parameter integer setdom = 1,   // S=R=1 policy: 1 set-dom, 0 reset-dom, -1 hold
+    parameter integer qinit  = 0    // power-up state: 0 -> Q low, else Q high
+) (
+    input  wire s, r,
+    output wire q, qn
+);
+
+  reg qstate;                        // the held bit: 1 -> Q high/QN low, 0 -> Q low/QN high
+
+  // Parameter guard: reject an illegal Strategy selection up front, and set the
+  // defined power-up state. Plain `initial` -- no analog block exists here, but
+  // this stays a pure digital construct regardless.
+  initial begin
+    if (setdom != 1 && setdom != 0 && setdom != -1)
+      $error("generic_latch %m: setdom=%0d not in {1,0,-1}", setdom);
+    qstate = (qinit != 0) ? 1'b1 : 1'b0;   // defined start; real latch is indeterminate
+  end
+
+  // Level-sensitive bistable. `=== 1` case-equality so x/z on an input holds
+  // state rather than matching a set/reset. On S=R=1 apply the Strategy-selected
+  // `setdom` policy; otherwise S xor R sets/resets and S=R=0 holds by writing
+  // nothing.
+  always @(s or r) begin
+    if ((s === 1) && (r === 1)) begin
+      if      (setdom ==  1) qstate = 1'b1;   // set-dominant
+      else if (setdom ==  0) qstate = 1'b0;   // reset-dominant
+      // setdom == -1: hold -- leave qstate unchanged
+    end
+    else if (s === 1) qstate = 1'b1;          // set
+    else if (r === 1) qstate = 1'b0;          // reset
+    // else S=R=0: hold
+  end
+
+  assign q  =  qstate;               // QN is always the exact complement of Q
+  assign qn = ~qstate;
+endmodule
