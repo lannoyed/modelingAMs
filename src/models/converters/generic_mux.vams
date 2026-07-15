@@ -1,0 +1,157 @@
+// generic_mux.vams -- N-to-1 analog multiplexer, parametric channel count,
+// binary-coded select.
+//
+// Why: every "pick one of N analog signals" need (ADC front-end channel
+// select, test mux, sensor-bank scan) is the same primitive: decode a
+// digital select bus to one active channel and gate it onto a shared output
+// with a real, finite-conductance switch. Composition, not copy-paste: this
+// module carries no switch physics of its own -- it instantiates one
+// `generic_switch` per channel (the repo's vetted smooth-conductance
+// primitive) and owns only the digital decode logic.
+//
+// LRM/Symphony features: `in` is a vectored `electrical` port (num_inputs
+// independent terminals under one name, indexed `in[i]` -- the same
+// range-before-name arrayed-discipline-node idiom as an R-2R ladder bus, and
+// the array form of the scalar `inout p, n,` + body `electrical p, n;` split
+// generic_switch already uses). `sel`/`en` are plain digital `wire`s,
+// written fully inline in the ANSI header exactly as generic_switch's own
+// `input wire ctrl` -- no separate body re-declaration needed for a fully
+// specified wire port. The electrical<->digital boundary is resolved
+// entirely inside each `generic_switch` instance via Symphony's automatic
+// D2A connect module (see disciplines.vams); this module declares no
+// project-specific connect module of its own.
+//
+// Select bus width: `sel_width` is an explicit bare parameter, not a
+// computed `$clog2(num_inputs)` folded into the port declaration. This repo
+// has already hit one case (see pitfalls/parameters.md) where syntax that is
+// legal per the VAMS-2023 grammar was rejected by Symphony's ADMS front end
+// anyway -- `$clog2` inside an ANSI port width is untested here and a
+// generate-loop-sized array is exactly the place a silent width-0 or
+// mis-elaborated port would be hardest to debug. A plain arithmetic
+// parameter (`sel_width-1:0`) is the same construct every other parametric
+// bus in this repo already relies on. Caller picks `sel_width` to fit
+// `num_inputs` (guarded below); default of 8 covers up to 256 channels.
+//
+// Decode: a combinational block turns (en, sel) into a one-hot target
+// vector. `en !== 1` or `sel >= num_inputs` (reachable whenever num_inputs
+// isn't a power of two, or sel_width is wider than strictly needed) decodes
+// to all-zero -- every channel off, a defined safe idle rather than a
+// silent/undefined selection.
+//
+// Design pattern -- Strategy on break-before-make (`tbbm`): each channel's
+// one-hot bit DEASSERTS immediately ("break") but ASSERTS only after a
+// `tbbm` dead time ("make"), via a nonblocking intra-assignment delay in the
+// digital kernel. `tbbm = 0` collapses to simultaneous make/break (the naive
+// mux); `tbbm > 0` guarantees the outgoing and incoming channel's
+// `generic_switch` conductances never both ramp up at once into the shared
+// `out` node. One parameter swaps the safety behavior -- same idea as this
+// repo's SC-converter non-overlap generator, applied here to the mux's own
+// internal decode rather than an external phase generator.
+//
+// Design pattern -- Factory-style config: `num_inputs` plus one shared
+// ron/roff/trise/tfall selects the whole channel-count/electrical-corner
+// family from a single module instead of N hand-duplicated mux variants.
+//
+// Range guards: sub-module (instantiated with per-instance overrides, e.g.
+// by an ADC front-end or channel-scanning top block), so the ANSI header
+// stays bare -- no `from`/`exclude` -- to keep those overrides binding
+// reliably at Symphony elaboration (pitfalls/parameters.md's `_top`-vs-
+// sub-module convention: every `generic_*` primitive in this repo is a
+// sub-module, never a `_top`). Ranges are checked at runtime in a plain
+// `initial` block, kept separate from the decode/generate logic below:
+// `$error` on an out-of-range override halts the run with a clear
+// diagnostic. `num_inputs`/`sel_width` size the port array and generate
+// loop structurally, so a bad override there can still fail elaboration
+// itself before the guard ever runs -- the same practical limit every other
+// structural (non-`from`) parameter faces in a Verilog generate; the guard
+// still catches it whenever elaboration tolerates the bad value (e.g.
+// `sel_width` too narrow for `num_inputs`, both individually positive).
+//
+// Timescale: repo-wide `timescale 1ns / 1ps (CLAUDE.md ground rules). `tbbm`
+// is a `#` delay argument, so it is given DIRECTLY in nanoseconds -- no
+// seconds<->unit conversion or scale constant.
+//
+// Limitations: if `tbbm` is set too small relative to `trise`/`tfall`, the
+// outgoing channel's conductance may not have fully decayed before the
+// incoming channel's conductance starts ramping -- a transient partial-
+// overlap short between two input sources through their series Ron path.
+// This is a stimulus/parameter-choice corner (see stimuli/generic_mux.md),
+// not a code defect; `tbbm >> max(trise, tfall)` avoids it. No leakage path
+// to ground/substrate is modeled -- only channel-to-`out` leakage via each
+// generic_switch's own `roff`, the same idealization generic_switch already
+// documents.
+
+`timescale 1ns / 1ps
+`include "disciplines.vams"
+`include "constants.vams"
+
+module generic_mux #(
+    parameter integer num_inputs = 4,      // channel count; must be >= 2
+    parameter integer sel_width  = 8,      // sel bus width [bits]; must be in [1:30] and satisfy 2**sel_width >= num_inputs
+    parameter real    ron        = 50e-3,  // per-channel switch on-resistance [Ohm]; must be > 0
+    parameter real    roff       = 100e6,  // per-channel switch off-state leakage resistance [Ohm]; must be > 0
+    parameter real    trise      = 1e-9,   // per-channel switch turn-on edge [s]; must be > 0
+    parameter real    tfall      = 1e-9,   // per-channel switch turn-off edge [s]; must be > 0
+    parameter real    tbbm       = 2.0     // break-before-make dead time [ns]; must be >= 0; 0 = simultaneous make/break
+) (
+    inout      [0:num_inputs-1] in,        // num_inputs independent electrical input channels
+    inout      out,                        // common electrical output (selected channel routed here)
+    input wire [sel_width-1:0] sel,        // binary-coded channel select
+    input wire en                          // active-high enable; !==1 forces all channels off
+);
+  electrical [0:num_inputs-1] in;
+  electrical out;
+
+  // Parameter guard: plain `initial`, kept separate from the decode/generate
+  // logic below (Symphony allows any number of `initial` blocks; this module
+  // has no `analog` block of its own at all -- every contribution lives
+  // inside the instantiated generic_switch channels).
+  initial begin
+    if (num_inputs < 2)
+      $error("generic_mux %m: num_inputs=%0d out of range [2:inf)", num_inputs);
+    if (sel_width < 1 || sel_width > 30)
+      $error("generic_mux %m: sel_width=%0d out of range [1:30]", sel_width);
+    if ((1 << sel_width) < num_inputs)
+      $error("generic_mux %m: sel_width=%0d too narrow for num_inputs=%0d", sel_width, num_inputs);
+    if (ron <= 0.0)
+      $error("generic_mux %m: ron=%g out of range (0:inf)", ron);
+    if (roff <= 0.0)
+      $error("generic_mux %m: roff=%g out of range (0:inf)", roff);
+    if (trise <= 0.0)
+      $error("generic_mux %m: trise=%g out of range (0:inf)", trise);
+    if (tfall <= 0.0)
+      $error("generic_mux %m: tfall=%g out of range (0:inf)", tfall);
+    if (tbbm < 0.0)
+      $error("generic_mux %m: tbbm=%g out of range [0:inf)", tbbm);
+  end
+
+  // Combinational one-hot decode. Out-of-range sel or en!==1 -> all-zero
+  // (every channel off), a defined safe idle rather than an undefined pick.
+  reg [num_inputs-1:0] target;
+  always @* begin
+    target = {num_inputs{1'b0}};
+    if ((en === 1'b1) && (sel < num_inputs))
+      target[sel] = 1'b1;
+  end
+
+  genvar i;
+  generate
+    for (i = 0; i < num_inputs; i = i + 1) begin : g_ch
+      // Per-channel break-before-make shaping: break (target[i] -> 0) takes
+      // effect immediately; make (target[i] -> 1) is delayed by tbbm so the
+      // outgoing channel's generic_switch has tbbm to decay before the
+      // incoming one starts ramping up.
+      reg onehot;
+      initial onehot = 1'b0;
+      always @(target[i]) begin
+        if (target[i] === 1'b1)
+          onehot <= #(tbbm) 1'b1;   // make: delayed
+        else
+          onehot <= 1'b0;          // break: immediate
+      end
+
+      generic_switch #(.ron(ron), .roff(roff), .trise(trise), .tfall(tfall))
+        u_sw (.p(in[i]), .n(out), .ctrl(onehot));
+    end
+  endgenerate
+endmodule

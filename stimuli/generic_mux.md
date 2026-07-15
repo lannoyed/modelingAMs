@@ -1,7 +1,10 @@
-# Stimulus Plan — `generic_mux_top`
+# Stimulus Plan — `generic_mux`
 
 Written plan only — no testbench, no `.do` scripts, no driver module. Sequences,
-corners, and what each is meant to expose.
+corners, and what each is meant to expose. `generic_mux` is a sub-module (bare
+ANSI header, runtime-guarded, meant to be instantiated with per-instance
+overrides) — this plan exercises the module standalone, at whatever
+`num_inputs`/`sel_width` a real caller would override it with.
 
 ## Ports to drive
 
@@ -9,7 +12,7 @@ corners, and what each is meant to expose.
 |---|---|---|
 | `in[0:num_inputs-1]` | electrical (conservative), `num_inputs` independent channels | source/load impedance per channel, the source signals themselves |
 | `out` | electrical (conservative) | load impedance, sink |
-| `sel` | digital `wire [width-1:0]`, binary-coded | select-code generation/timing itself |
+| `sel` | digital `wire [sel_width-1:0]`, binary-coded | select-code generation/timing itself |
 | `en` | digital `wire` | enable waveform itself |
 
 ## Core sequences
@@ -39,7 +42,8 @@ corners, and what each is meant to expose.
    theoretical concern.
 
 4. **Out-of-range `sel`** — with `num_inputs` not a power of two (e.g. 3 or
-   5), drive `sel` to a code `>= num_inputs`. Exposes: the decode's defined
+   5), drive `sel` to a code `>= num_inputs` (still `< 2**sel_width`, i.e. a
+   representable-but-unassigned code). Exposes: the decode's defined
    safe-idle behavior — all channels off, `out` floating to whatever the
    aggregate `roff` network leaves it at, rather than an undefined or
    accidentally-still-selected channel.
@@ -57,22 +61,24 @@ corners, and what each is meant to expose.
    decode falls to all-off rather than guessing a channel, matching
    `generic_switch`'s own `ctrl === 1` failure mode.
 
-7. **Bad-parameter override** — instantiate with `num_inputs < 2`, or any of
+7. **Bad-parameter override** — instantiate with `num_inputs < 2`,
+   `sel_width` out of `[1:30]` or too narrow for `num_inputs`, any of
    `ron`/`roff`/`trise`/`tfall` at 0 or negative, or `tbbm < 0`. Exposes: the
-   `from (...)` guards in `generic_mux_top_PARAM.vams` reject elaboration
-   with a clear diagnostic rather than sizing a zero/negative-width channel
-   array or letting a bad switch parameter propagate silently into every
-   instantiated `generic_switch`.
+   `initial`-block `$error` guard fires at `t=0` with the offending value and
+   instance path (`%m`) and halts the run, rather than sizing a
+   zero/mis-elaborated channel array or letting a bad switch parameter
+   propagate silently into every instantiated `generic_switch`.
 
 ## Corners / parameter settings to exercise
 
 | Parameter | Corner values | Why |
 |---|---|---|
 | `num_inputs` | 2 (minimum), a power of two (4, 8), and a non-power-of-two (3, 5) | exercises the smallest valid array, typical sizes, and the reachable-out-of-range-code path (sequence 4) |
+| `sel_width` | exactly enough bits for `num_inputs` (tight), and the default 8 (slack) | confirms both a tight and a slack sel bus decode identically for valid codes, and that slack codes above `num_inputs-1` hit the safe-idle path (sequence 4) |
 | `tbbm` | 0, a few × `trise`/`tfall` (nominal), and comparable to/below `trise`/`tfall` (fault) | sequences 2 and 3 — the headline safety parameter of this model |
 | `ron` | default, and an order of magnitude above/below | per-channel insertion loss/attenuation sensitivity, same as `generic_switch`'s own sweep |
 | `roff` | default (~100 MOhm), and a "leaky" value (~1 MOhm) | confirms cross-channel leakage into `out` is visible and traceable to `roff`, not floored elsewhere |
-| `sel` | every valid code, plus one out-of-range code if `num_inputs` isn't a power of two, plus `x` | sequences 1, 4, 6 |
+| `sel` | every valid code, plus one out-of-range-but-representable code, plus `x` | sequences 1, 4, 6 |
 | `en` | steady 1, toggled mid-sequence, `x` | sequences 1, 5, 6 |
 
 ## Translation notes (plain-English, next to the relevant sequence)
