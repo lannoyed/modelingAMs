@@ -1,0 +1,112 @@
+// generic_mux_top.vams -- N-to-1 analog multiplexer, parametric channel
+// count, binary-coded select.
+//
+// Why: every "pick one of N analog signals" need (ADC front-end channel
+// select, test-mux, sensor-bank scan) is the same primitive: decode a
+// digital select bus to one active channel and gate it onto a shared output
+// with a real, finite-conductance switch. Composition, not copy-paste: this
+// module carries no switch physics of its own -- it instantiates one
+// `generic_switch` per channel (already the repo's vetted smooth-conductance
+// primitive) and owns only the digital decode logic.
+//
+// LRM/Symphony features: `in[0:num_inputs-1]` and `out` are conservative
+// `electrical` nodes (an arrayed-net port -- num_inputs independent
+// electrical terminals, not a single multi-bit bus). `sel` and `en` are
+// plain digital `wire`s; the electrical<->digital boundary is resolved
+// entirely inside each `generic_switch` instance via Symphony's automatic
+// D2A connect module (see disciplines.vams) -- this module declares no
+// project-specific connect module of its own.
+//
+// Decode: a combinational block turns (en, sel) into a one-hot target
+// vector. `en !== 1` or `sel >= num_inputs` (reachable whenever num_inputs
+// isn't a power of two) decodes to all-zero -- every channel off, a defined
+// safe idle rather than a silent/undefined selection.
+//
+// Design pattern -- Strategy on break-before-make (`tbbm`): each channel's
+// one-hot bit DEASSERTS immediately ("break") but ASSERTS only after a
+// `tbbm` dead time ("make"), via a nonblocking intra-assignment delay in the
+// digital kernel. `tbbm = 0` collapses to simultaneous make/break (the naive
+// mux); `tbbm > 0` guarantees the outgoing and incoming channel's
+// `generic_switch` conductances never both ramp up at once into the shared
+// `out` node. One parameter swaps the safety behavior -- same idea as this
+// repo's SC-converter non-overlap generator, applied here to the mux's own
+// internal decode rather than an external phase generator.
+//
+// Design pattern -- Factory-style config: `num_inputs` plus one shared
+// ron/roff/trise/tfall selects the whole channel-count/electrical-corner
+// family from a single module instead of N hand-duplicated mux variants.
+//
+// Naming/parameter convention ("_top" vs. sub-module, pitfalls/parameters.md):
+// this is a `_top` block -- the terminal module a testbench instantiates
+// directly, never itself instantiated-with-overrides by anything else in
+// this repo -- so it keeps the ANSI-header + generic_mux_top_PARAM.vams
+// convention with `from (...)` elaboration-time range guards, including
+// `num_inputs` (it sizes the generate loop, so out-of-range must be caught
+// before elaboration proceeds, not at runtime). ron/roff/trise/tfall are
+// passthrough overrides into every generic_switch instance; generic_switch
+// re-guards them itself at runtime, but since there is only one shared value
+// here (no per-tier split like sc_tripler_top), the elaboration-time guard on
+// this module's own header is the only guard that actually applies to them.
+//
+// Timescale: repo-wide `timescale 1ns / 1ps (CLAUDE.md ground rules). `tbbm`
+// is a `#` delay argument, so it is given DIRECTLY in nanoseconds -- no
+// seconds<->unit conversion or scale constant.
+//
+// Limitations: if `tbbm` is set too small relative to `trise`/`tfall`, the
+// outgoing channel's conductance may not have fully decayed before the
+// incoming channel's conductance starts ramping -- a transient partial-
+// overlap short between two input sources through their series Ron path.
+// This is a stimulus/parameter-choice corner (see stimuli/generic_mux_top.md),
+// not a code defect; `tbbm >> max(trise, tfall)` avoids it. No leakage path
+// to ground/substrate is modeled -- only channel-to-`out` leakage via each
+// generic_switch's own `roff`, the same idealization generic_switch already
+// documents.
+
+`timescale 1ns / 1ps
+`include "disciplines.vams"
+`include "constants.vams"
+
+module generic_mux_top #(
+`include "generic_mux_top_PARAM.vams"
+) (
+    inout  [0:num_inputs-1] in,   // num_inputs independent electrical input channels
+    inout  out,                   // common electrical output (selected channel routed here)
+    input  wire [$clog2(num_inputs)-1:0] sel,  // binary-coded channel select
+    input  wire en                             // active-high enable; !==1 forces all channels off
+);
+  electrical [0:num_inputs-1] in;
+  electrical out;
+
+  localparam integer width = $clog2(num_inputs);
+
+  // Combinational one-hot decode. Out-of-range sel or en!==1 -> all-zero
+  // (every channel off), a defined safe idle rather than an undefined pick.
+  reg [num_inputs-1:0] target;
+  integer k;
+  always @* begin
+    target = {num_inputs{1'b0}};
+    if ((en === 1'b1) && (sel < num_inputs))
+      target[sel] = 1'b1;
+  end
+
+  genvar i;
+  generate
+    for (i = 0; i < num_inputs; i = i + 1) begin : g_ch
+      // Per-channel break-before-make shaping: break (target[i] -> 0) takes
+      // effect immediately; make (target[i] -> 1) is delayed by tbbm so the
+      // outgoing channel's generic_switch has tbbm to decay before the
+      // incoming one starts ramping up.
+      reg onehot;
+      initial onehot = 1'b0;
+      always @(target[i]) begin
+        if (target[i] === 1'b1)
+          onehot <= #(tbbm) 1'b1;   // make: delayed
+        else
+          onehot <= 1'b0;           // break: immediate
+      end
+
+      generic_switch #(.ron(ron), .roff(roff), .trise(trise), .tfall(tfall))
+        u_sw (.p(in[i]), .n(out), .ctrl(onehot));
+    end
+  endgenerate
+endmodule

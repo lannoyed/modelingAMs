@@ -1,0 +1,14 @@
+// generic_mux_top_PARAM.vams — default parameter values for generic_mux_top.
+// Included directly inside generic_mux_top's ANSI parameter port list #( ... ),
+// so each value keeps its own elaboration-time range guard rather than being
+// a bare macro. This comma-chained, semicolon-free shape is only legal
+// spliced inside #( ... ) -- see pitfalls/parameters.md's "_top vs.
+// sub-module" convention. `num_inputs` sizes the channel array/generate loop
+// at elaboration time, so it gets the same `from` guard as every other value
+// here, not a runtime check.
+    parameter integer num_inputs = 4     from [2:inf),   // number of mux input channels
+    parameter real    ron        = 50m   from (0:inf),   // per-channel switch on-resistance [Ohm]
+    parameter real    roff       = 100M  from (0:inf),   // per-channel switch off-state leakage resistance [Ohm]
+    parameter real    trise      = 1n    from (0:inf),   // per-channel switch turn-on edge [s]
+    parameter real    tfall      = 1n    from (0:inf),   // per-channel switch turn-off edge [s]
+    parameter real    tbbm       = 2.0   from [0:inf)    // break-before-make dead time [ns]; 0 = simultaneous make/break
