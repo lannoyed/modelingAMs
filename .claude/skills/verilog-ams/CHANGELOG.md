@@ -3,6 +3,20 @@
 Each accepted SKILL-UPDATE lands here, newest first.
 Format: `## YYYY-MM-DD — [ADD/REVISE] target — summary`
 
+## 2026-07-20 — REVISE SKILL.md — LRM ground truth: quote-or-grep + structural lint
+Anti-hallucination infrastructure. `scripts/lrm_convert.py` converts the LRM PDF
+verbatim (no LLM) into greppable per-clause text under `docs/lrm/` + generated
+`INDEX.md`, and extracts the formal-syntax BNF annex to
+`references/grammar_bnf.txt` (pending PDF: accellera.org blocked by session
+network policy — see docs/lrm/README.md). New SKILL.md rules: (1) quote-or-grep —
+never assert an LRM rule from memory, grep `docs/lrm/` or cite a skill rule
+carrying a verbatim quote + clause/revision; (2) run `scripts/vams_lint.py` on
+every emitted module (checks: timescale-before-module, $realtime-in-analog,
+`<+`-outside-analog, `#`-in-analog, discipline-outside-disciplines.vams,
+module-name==stem); (3) accepted SKILL-UPDATE deltas stating LRM rules must
+carry the quote and, when mechanical, a lint check. First lint run flagged 3
+pre-existing models missing `` `timescale`` (not fixed here). SKILL.md v2.1.
+
 ## 2026-07-06 — ADD convergence.md (+ CLAUDE.md ground rule) — digital clocks & repo-wide timescale
 First purely-digital blocks (`generic_clkgen`, `generic_sr_nonoverlap`): generate
 clock/phases in the event-driven digital kernel (one analog breakpoint per edge, not
