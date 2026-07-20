@@ -13,3 +13,4 @@ verilog.dump
 # Editor / OS
 *.swp
 .DS_Store
+__pycache__/
